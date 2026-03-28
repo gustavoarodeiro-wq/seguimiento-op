@@ -2,8 +2,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
-
+import bcrypt as _bcrypt
 import json
 from database import get_db, Usuario, RolUsuario
 from routers.auth import require_auth
@@ -12,8 +11,6 @@ from permissions import compute_permisos, TODOS_LOS_PERMISOS, GRUPOS_PERMISOS, d
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.cache = None  # workaround Python 3.14+
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ROLES_VALIDOS = {r.value for r in RolUsuario}
 
@@ -64,7 +61,7 @@ async def api_create_usuario(
     nuevo = Usuario(
         nombre=nombre,
         email=email,
-        password_hash=pwd_context.hash(password),
+        password_hash=_bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode(),
         rol=RolUsuario(rol),
         activo=True,
     )
@@ -129,7 +126,7 @@ async def api_cambiar_password(
     password = body.get("password", "").strip()
     if not password or len(password) < 6:
         raise HTTPException(status_code=422, detail="La contraseña debe tener al menos 6 caracteres.")
-    item.password_hash = pwd_context.hash(password)
+    item.password_hash = _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
     db.commit()
     return {"ok": True}
 

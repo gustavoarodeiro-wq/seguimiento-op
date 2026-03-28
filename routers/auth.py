@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 
 from database import get_db, Usuario
 from permissions import compute_permisos
@@ -10,8 +10,6 @@ from permissions import compute_permisos
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.cache = None  # workaround Python 3.14+
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ── Dependencia de sesión ──────────────────────────────────────────────────────
@@ -55,7 +53,7 @@ async def login_submit(
         Usuario.activo == True,
     ).first()
 
-    if not usuario or not pwd_context.verify(password, usuario.password_hash):
+    if not usuario or not _bcrypt.checkpw(password.encode(), usuario.password_hash.encode()):
         error = "Email o contraseña incorrectos."
         return templates.TemplateResponse(
             request, "login.html", {"error": error}, status_code=401

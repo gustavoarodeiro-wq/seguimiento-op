@@ -7,10 +7,8 @@ Uso: python init_db.py
 
 from database import Base, engine, SessionLocal
 from database import Usuario, RolUsuario, AlertaConfig
-from passlib.context import CryptContext
+import bcrypt as _bcrypt
 import sys
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ADMIN_EMAIL = "admin@sistema.com"
 ADMIN_PASSWORD = "Admin123"
@@ -38,7 +36,7 @@ def init():
             admin = Usuario(
                 nombre=ADMIN_NOMBRE,
                 email=ADMIN_EMAIL,
-                password_hash=pwd_context.hash(ADMIN_PASSWORD),
+                password_hash=_bcrypt.hashpw(ADMIN_PASSWORD.encode(), _bcrypt.gensalt()).decode(),
                 rol=RolUsuario.admin,
                 activo=True,
             )
