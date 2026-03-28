@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Productos Terminados — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  {% include "partials/maestro_styles.html" %}
+  <style>
+    .tab-btn {
+      background: none; border: none; cursor: pointer;
+      padding: .6rem 1.1rem; font-size: .875rem; font-weight: 500;
+      color: var(--gray-500); border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--gray-800); }
+    .tab-btn.tab-active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Productos Terminados</h1>
+        <p class="page-subtitle">Alta y mantenimiento de productos</p>
+      </div>
+      {% if user.rol == 'admin' %}
+      <button class="btn btn-primary" onclick="abrirModal()">+ Nuevo producto</button>
+      {% endif %}
+    </div>
+
+    <!-- Barra de búsqueda y tabs -->
+    <div class="card">
+      <div class="card-header">
+        <div class="toolbar">
+          <input type="text" id="filtro" placeholder="Buscar código o descripción…" oninput="filtrar()">
+          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
+            <input type="checkbox" id="chkInactivos" onchange="filtrar()"> Mostrar inactivos
+          </label>
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+          <span class="text-muted text-sm" id="countLabel"></span>
+          {% if user.rol == 'admin' %}
+          <!-- Botones contextuales: cambian según el tab activo -->
+          <span id="btnsTabTodos" style="display:flex;gap:.4rem">
+            <a href="/api/productos/plantilla" class="btn btn-secondary btn-sm" download>⬇ Exportar Excel</a>
+            <button class="btn btn-secondary btn-sm" onclick="abrirImport('/api/productos/importar')">↑ Importar</button>
+          </span>
+          <span id="btnsTabComprimidos" style="display:none;gap:.4rem">
+            <a href="/api/productos/plantilla-comprimidos" class="btn btn-secondary btn-sm" download>⬇ Exportar Comprimidos</a>
+            <button class="btn btn-secondary btn-sm" onclick="abrirImport('/api/productos/importar-comprimidos')">↑ Importar</button>
+          </span>
+          <span id="btnsTabLiquidos" style="display:none;gap:.4rem">
+            <a href="/api/productos/plantilla-liquidos" class="btn btn-secondary btn-sm" download>⬇ Exportar Líquidos/Sólidos</a>
+            <button class="btn btn-secondary btn-sm" onclick="abrirImport('/api/productos/importar-liquidos')">↑ Importar</button>
+          </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--gray-200);padding:0 1.25rem">
+        <button class="tab-btn tab-active" id="tab-todos"        onclick="switchTab('todos')">Todos</button>
+        <button class="tab-btn"            id="tab-comprimidos"  onclick="switchTab('comprimidos')">Comprimidos</button>
+        <button class="tab-btn"            id="tab-liquidos"     onclick="switchTab('liquidos')">Líquidos / Sólidos</button>
+      </div>
+
+      <!-- Vista Todos -->
+      <div id="vista-todos" class="table-wrapper">
+        <table>
+          <thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Forma Farmacéutica</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbody-todos"><tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Vista Comprimidos -->
+      <div id="vista-comprimidos" class="table-wrapper" style="display:none">
+        <table>
+          <thead><tr><th>Código</th><th>Descripción</th><th>Forma</th><th>Peso comp. (mg)</th><th>Comp./Blister</th><th>Blisters/PT</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbody-comprimidos"><tr><td colspan="8" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+
+      <!-- Vista Líquidos / Sólidos -->
+      <div id="vista-liquidos" class="table-wrapper" style="display:none">
+        <table>
+          <thead><tr><th>Código</th><th>Descripción</th><th>Forma</th><th>Granel/unidad</th><th>Unidades/PT</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbody-liquidos"><tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">Nuevo Producto</h3>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label>Código *</label>
+      <input type="text" id="fCodigo" placeholder="ej: PTX-001" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>Descripción *</label>
+      <input type="text" id="fDesc" placeholder="Nombre completo del producto">
+    </div>
+    <div class="form-group">
+      <label>Unidad *</label>
+      <select id="fUnidad">
+        <option value="UN">UN — Unidades</option>
+        <option value="KG">Kg — Kilogramos</option>
+        <option value="L">L — Litros</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Forma Farmacéutica</label>
+      <select id="fFormaId" onchange="actualizarBloqueGranel()">
+        <option value="">— Sin forma —</option>
+      </select>
+    </div>
+
+    <div id="bloqueGranel" style="display:none;border-top:1px solid var(--gray-100);margin-top:.75rem;padding-top:.75rem">
+      <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+        Datos de granel
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div class="form-group" style="margin:0">
+          <label>Granel por unidad <span id="labelUnidadGranel" style="color:var(--gray-500);font-weight:400"></span></label>
+          <input type="number" id="fGranelXUnidad" step="0.1" min="0" value="1" placeholder="ej: 5.0">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Unidades por PT</label>
+          <input type="number" id="fUnidadesXPT" step="1" min="1" value="1" placeholder="ej: 30">
+        </div>
+      </div>
+    </div>
+
+    <div id="bloqueComprimido" style="display:none;border-top:1px solid var(--gray-100);margin-top:.75rem;padding-top:.75rem">
+      <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+        Datos de comprimido
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+        <div class="form-group" style="margin:0">
+          <label>Peso comprimido (mg)</label>
+          <input type="number" id="fPesoComprimido" step="1" min="1" value="500" placeholder="ej: 500">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Comprimidos x Blister (UN)</label>
+          <input type="number" id="fComprimidosXBlister" step="1" min="1" value="1" placeholder="ej: 10">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Blisters x PT (UN)</label>
+          <input type="number" id="fBlistersXPT" step="1" min="1" value="1" placeholder="ej: 3">
+        </div>
+      </div>
+    </div>
+
+    <div id="alertModal" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+  const API = '/api/productos';
+  const canEdit = {{ 'true' if user.rol == 'admin' else 'false' }};
+  const isAdmin = {{ 'true' if user.rol == 'admin' else 'false' }};
+  let allItems = [];
+  let allFormas = [];
+
+  document.addEventListener('DOMContentLoaded', cargar);
+
+  async function cargar() {
+    const [resP, resF] = await Promise.all([
+      fetch(API),
+      fetch('/api/formas-farmaceuticas'),
+    ]);
+    allItems = await resP.json();
+    allFormas = await resF.json();
+    _poblarSelectFormas();
+    filtrar();
+  }
+
+  function _poblarSelectFormas() {
+    const sel = document.getElementById('fFormaId');
+    sel.innerHTML = '<option value="">— Sin forma —</option>';
+    allFormas.filter(f => f.activo).forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.unidad ? `${f.nombre} (${fmtUnidad(f.unidad)})` : f.nombre;
+      sel.appendChild(opt);
+    });
+  }
+
+  let _tabActual = 'todos';
+
+  function switchTab(tab) {
+    _tabActual = tab;
+    ['todos','comprimidos','liquidos'].forEach(t => {
+      document.getElementById(`tab-${t}`).classList.toggle('tab-active', t === tab);
+      document.getElementById(`vista-${t}`).style.display = t === tab ? '' : 'none';
+      const btns = document.getElementById(`btnsTab${t.charAt(0).toUpperCase()+t.slice(1)}`);
+      if (btns) btns.style.display = t === tab ? 'flex' : 'none';
+    });
+    filtrar();
+  }
+
+  function _acciones(i) {
+    return `<td style="display:flex;gap:.4rem">
+      ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick='editar(${JSON.stringify(i)})'>Editar</button>` : ''}
+      ${isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="toggle(${i.id},this)">${i.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+    </td>`;
+  }
+
+  function _estadoBadge(i) {
+    return `<span class="badge badge-${i.activo ? 'activo' : 'inactivo'}">${i.activo ? 'Activo' : 'Inactivo'}</span>`;
+  }
+
+  function filtrar() {
+    const q = document.getElementById('filtro').value.toLowerCase();
+    const verInactivos = document.getElementById('chkInactivos').checked;
+    const base = allItems.filter(i =>
+      (verInactivos || i.activo) &&
+      (i.codigo.toLowerCase().includes(q) || i.descripcion.toLowerCase().includes(q))
+    );
+
+    if (_tabActual === 'todos') {
+      document.getElementById('countLabel').textContent = `${base.length} item(s)`;
+      const tbody = document.getElementById('tbody-todos');
+      if (!base.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = base.map(i => {
+        const formaNombre = i.forma_farmaceutica_nombre ?? i.forma_farmaceutica ?? '—';
+        return `<tr class="${i.activo ? '' : 'row-inactivo'}">
+          <td class="font-mono">${esc(i.codigo)}</td>
+          <td>${esc(i.descripcion)}</td>
+          <td>${fmtUnidad(i.unidad)}</td>
+          <td class="text-muted text-sm">${esc(formaNombre)}</td>
+          <td>${_estadoBadge(i)}</td>
+          ${_acciones(i)}
+        </tr>`;
+      }).join('');
+
+    } else if (_tabActual === 'comprimidos') {
+      const lista = base.filter(i => (i.forma_farmaceutica_nombre ?? i.forma_farmaceutica ?? '').toLowerCase().includes('comprimido'));
+      document.getElementById('countLabel').textContent = `${lista.length} comprimido(s)`;
+      const tbody = document.getElementById('tbody-comprimidos');
+      if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = lista.map(i => `<tr class="${i.activo ? '' : 'row-inactivo'}">
+        <td class="font-mono">${esc(i.codigo)}</td>
+        <td>${esc(i.descripcion)}</td>
+        <td class="text-muted text-sm">${esc(i.forma_farmaceutica_nombre ?? i.forma_farmaceutica ?? '—')}</td>
+        <td class="text-sm">${i.peso_comprimido != null ? `${i.peso_comprimido} mg` : '—'}</td>
+        <td class="text-sm">${i.cantidad_comprimidos_x_blister ?? '—'}</td>
+        <td class="text-sm">${i.cantidad_blisters_x_pt ?? '—'}</td>
+        <td>${_estadoBadge(i)}</td>
+        ${_acciones(i)}
+      </tr>`).join('');
+
+    } else {
+      const lista = base.filter(i => {
+        const fn = (i.forma_farmaceutica_nombre ?? i.forma_farmaceutica ?? '').toLowerCase();
+        return i.forma_farmaceutica_unidad && !fn.includes('comprimido');
+      });
+      document.getElementById('countLabel').textContent = `${lista.length} producto(s)`;
+      const tbody = document.getElementById('tbody-liquidos');
+      if (!lista.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = lista.map(i => {
+        const u = fmtUnidad(i.forma_farmaceutica_unidad ?? '');
+        return `<tr class="${i.activo ? '' : 'row-inactivo'}">
+          <td class="font-mono">${esc(i.codigo)}</td>
+          <td>${esc(i.descripcion)}</td>
+          <td class="text-muted text-sm">${esc(i.forma_farmaceutica_nombre ?? i.forma_farmaceutica ?? '—')}</td>
+          <td class="text-sm">${i.cantidad_granel_x_unidad != null ? `${i.cantidad_granel_x_unidad} ${u}` : '—'}</td>
+          <td class="text-sm">${i.cantidad_unidades_x_pt ?? '—'}</td>
+          <td>${_estadoBadge(i)}</td>
+          ${_acciones(i)}
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  function abrirModal(item = null) {
+    document.getElementById('modalTitle').textContent = item ? 'Editar Producto' : 'Nuevo Producto';
+    document.getElementById('editId').value = item?.id ?? '';
+    document.getElementById('fCodigo').value = item?.codigo ?? '';
+    document.getElementById('fCodigo').disabled = !!item;
+    document.getElementById('fDesc').value = item?.descripcion ?? '';
+    document.getElementById('fUnidad').value = item?.unidad ?? 'UN';
+    document.getElementById('fFormaId').value = item?.forma_farmaceutica_id ?? '';
+    document.getElementById('fGranelXUnidad').value = item?.cantidad_granel_x_unidad ?? 1;
+    document.getElementById('fUnidadesXPT').value = item?.cantidad_unidades_x_pt ?? 1;
+    document.getElementById('fPesoComprimido').value = item?.peso_comprimido ?? 1;
+    document.getElementById('fComprimidosXBlister').value = item?.cantidad_comprimidos_x_blister ?? 1;
+    document.getElementById('fBlistersXPT').value = item?.cantidad_blisters_x_pt ?? 1;
+    document.getElementById('alertModal').style.display = 'none';
+    actualizarBloqueGranel();
+    document.getElementById('modal').classList.add('open');
+    document.getElementById(item ? 'fDesc' : 'fCodigo').focus();
+  }
+
+  function actualizarBloqueGranel() {
+    const fid = parseInt(document.getElementById('fFormaId').value);
+    const ff = allFormas.find(f => f.id === fid);
+    const esComprimido = ff && ff.nombre.toLowerCase().includes('comprimido');
+    const tieneGranel  = ff && ff.unidad && !esComprimido;
+
+    const bloqueG = document.getElementById('bloqueGranel');
+    if (tieneGranel) {
+      bloqueG.style.display = '';
+      document.getElementById('labelUnidadGranel').textContent = `(${fmtUnidad(ff.unidad)})`;
+    } else {
+      bloqueG.style.display = 'none';
+    }
+
+    const bloqueC = document.getElementById('bloqueComprimido');
+    bloqueC.style.display = esComprimido ? '' : 'none';
+  }
+
+  function editar(item) { abrirModal(item); }
+  function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+  async function guardar() {
+    const id = document.getElementById('editId').value;
+    const formaIdVal = document.getElementById('fFormaId').value;
+    const fid = formaIdVal ? parseInt(formaIdVal) : null;
+    const ff = allFormas.find(f => f.id === fid);
+    const esComprimido = ff && ff.nombre.toLowerCase().includes('comprimido');
+    const tieneGranel  = ff && ff.unidad && !esComprimido;
+
+    const body = {
+      codigo:               document.getElementById('fCodigo').value.trim().toUpperCase(),
+      descripcion:          document.getElementById('fDesc').value.trim(),
+      unidad:               document.getElementById('fUnidad').value,
+      forma_farmaceutica_id: fid,
+      cantidad_granel_x_unidad: tieneGranel  ? parseFloat(document.getElementById('fGranelXUnidad').value) || 1 : null,
+      cantidad_unidades_x_pt:   tieneGranel  ? parseInt(document.getElementById('fUnidadesXPT').value)   || 1 : null,
+      peso_comprimido:               esComprimido ? parseFloat(document.getElementById('fPesoComprimido').value)       || 1 : null,
+      cantidad_comprimidos_x_blister: esComprimido ? parseInt(document.getElementById('fComprimidosXBlister').value)    || 1 : null,
+      cantidad_blisters_x_pt:         esComprimido ? parseInt(document.getElementById('fBlistersXPT').value)            || 1 : null,
+    };
+    if (!body.descripcion) { showAlert('La descripción es obligatoria.'); return; }
+    if (!id && !body.codigo) { showAlert('El código es obligatorio.'); return; }
+
+    const btn = document.getElementById('btnGuardar');
+    btn.disabled = true;
+    const res = await fetch(id ? `${API}/${id}` : API, {
+      method: id ? 'PUT' : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      cerrarModal(); await cargar();
+    } else {
+      const err = await res.json();
+      showAlert(err.detail ?? 'Error al guardar.');
+    }
+  }
+
+  async function toggle(id, btn) {
+    btn.disabled = true;
+    const res = await fetch(`${API}/${id}/toggle`, { method: 'PATCH' });
+    btn.disabled = false;
+    if (res.ok) await cargar();
+    else alert('Error al cambiar estado.');
+  }
+
+  function showAlert(msg) {
+    const el = document.getElementById('alertModal');
+    el.textContent = msg; el.style.display = '';
+  }
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target.id === 'modal') cerrarModal();
+  });
+</script>
+{% include "partials/import_modal.html" %}
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Órdenes — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .filtros-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+      gap: .75rem;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 1000px) {
+      .filtros-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .badge-revisar     { background:#fef3c7; color:#92400e; }
+    .badge-faltante    { background:#ffe4e6; color:#9f1239; }
+    .badge-para_emitir { background:#ede9fe; color:#5b21b6; }
+    .badge-emitido     { background:#dbeafe; color:#1e40af; }
+    .badge-en_proceso  { background:#dcfce7; color:#14532d; }
+    .badge-terminada   { background:#ccfbf1; color:#134e4a; }
+    .badge-entregada   { background:#e0f2fe; color:#0369a1; }
+    .badge-cancelada   { background:#fee2e2; color:#991b1b; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Órdenes de Producción</h1>
+        <p class="page-subtitle">Listado y seguimiento de todas las órdenes</p>
+      </div>
+      {% if user.permisos.crear_orden %}
+      <a href="/ordenes/nueva" class="btn btn-primary">+ Nueva orden</a>
+      {% endif %}
+    </div>
+
+    <!-- Filtros -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-body" style="padding:.85rem 1.25rem">
+        <div class="filtros-grid">
+          <div class="form-group" style="margin:0">
+            <label>Búsqueda general</label>
+            <input type="text" id="inputBuscar" placeholder="OP, producto, lote…">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Estado</label>
+            <select id="selectEstado">
+              <option value="">Todos</option>
+              <option value="revisar">Revisar</option>
+              <option value="faltante">Faltante</option>
+              <option value="para_emitir">Para Emitir</option>
+              <option value="emitido">Emitido</option>
+              <option value="en_proceso">En Proceso</option>
+              <option value="terminada">Terminada</option>
+              <option value="entregada">Entregada</option>
+              <option value="cancelada">Cancelada</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Código</label>
+            <input type="text" id="inputCodigo" placeholder="Código producto">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Fecha desde</label>
+            <input type="date" id="inputDesde">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Fecha hasta</label>
+            <input type="date" id="inputHasta">
+          </div>
+          <div style="display:flex;gap:.4rem;padding-bottom:1px">
+            <button class="btn btn-primary" onclick="cargarOrdenes()">Buscar</button>
+            <button class="btn btn-secondary" onclick="limpiarFiltros()">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Resultados</span>
+        <span class="text-muted text-sm" id="totalLabel"></span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha carga</th>
+              <th>OP</th>
+              <th>Código</th>
+              <th>Producto</th>
+              <th>Cantidad</th>
+              <th>Estado</th>
+              <th>Subestado</th>
+              <th>Creado por</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyOrdenes">
+            <tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+
+  const LABELS_ESTADO = {
+    revisar:     'Revisar',
+    faltante:    'Faltante',
+    para_emitir: 'Para Emitir',
+    emitido:     'Emitido',
+    en_proceso:  'En Proceso',
+    terminada:   'Terminada',
+    entregada:   'Entregada',
+    cancelada:   'Cancelada',
+  };
+
+  document.addEventListener('DOMContentLoaded', cargarOrdenes);
+
+  document.getElementById('inputBuscar').addEventListener('keydown', e => {
+    if (e.key === 'Enter') cargarOrdenes();
+  });
+
+  async function cargarOrdenes() {
+    const q      = document.getElementById('inputBuscar').value.trim();
+    const estado = document.getElementById('selectEstado').value;
+    const codigo = document.getElementById('inputCodigo').value.trim();
+    const desde  = document.getElementById('inputDesde').value;
+    const hasta  = document.getElementById('inputHasta').value;
+
+    const params = new URLSearchParams({ limit: 2000, offset: 0 });
+    if (q)      params.set('q', q);
+    if (estado) params.set('estado', estado);
+    if (codigo) params.set('codigo', codigo);
+    if (desde)  params.set('fecha_desde', desde);
+    if (hasta)  params.set('fecha_hasta', hasta);
+
+    document.getElementById('tbodyOrdenes').innerHTML =
+      '<tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>';
+
+    const res  = await fetch(`/api/ordenes?${params}`);
+    const data = await res.json();
+
+    document.getElementById('totalLabel').textContent = `${data.total} orden(es)`;
+    renderTabla(data.items);
+  }
+
+  function limpiarFiltros() {
+    document.getElementById('inputBuscar').value = '';
+    document.getElementById('selectEstado').value = '';
+    document.getElementById('inputCodigo').value = '';
+    document.getElementById('inputDesde').value = '';
+    document.getElementById('inputHasta').value = '';
+    cargarOrdenes();
+  }
+
+  function renderTabla(ordenes) {
+    const tbody = document.getElementById('tbodyOrdenes');
+    if (!ordenes.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = ordenes.map(o => `
+      <tr>
+        <td class="text-sm text-muted">${fmtDate(o.fecha_carga)}</td>
+        <td class="font-mono">${esc(o.op ?? '—')}</td>
+        <td class="font-mono text-sm">${esc(o.codigo_producto)}</td>
+        <td>${esc(o.descripcion_producto)}</td>
+        <td class="text-sm">${o.cantidad} ${fmtUnidad(o.unidad ?? '')}</td>
+        <td><span class="badge badge-${esc(o.estado)}">${esc(LABELS_ESTADO[o.estado] ?? o.estado)}</span></td>
+        <td class="text-sm text-muted">${esc(o.subestado ?? '—')}</td>
+        <td class="text-sm text-muted">${esc(o.creado_por_nombre ?? '—')}</td>
+        <td><a href="/ordenes/${o.id}" class="btn btn-secondary btn-sm">Ver detalle</a></td>
+      </tr>
+    `).join('');
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

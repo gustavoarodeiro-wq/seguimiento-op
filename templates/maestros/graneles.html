@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Graneles — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .badge-activa   { background:#d1fae5; color:#065f46; font-size:.75rem; border-radius:99px;
+                      padding:.15rem .65rem; font-weight:600; }
+    .badge-inactiva { background:#f3f4f6; color:#6b7280; font-size:.75rem; border-radius:99px;
+                      padding:.15rem .65rem; font-weight:600; }
+    tr.granel-row:hover td { background:#f0f9ff; cursor:pointer; }
+
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+                     z-index:200; align-items:center; justify-content:center; padding:1rem; }
+    .modal-overlay.open { display:flex; }
+
+    .modal-detalle { background:#fff; border-radius:12px; width:100%; max-width:600px;
+                     max-height:90vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .modal-detalle-header { padding:1.25rem 1.5rem; border-bottom:1px solid var(--gray-200);
+                             display:flex; align-items:center; gap:.75rem; }
+    .modal-detalle-header h3 { margin:0; font-size:1.05rem; flex:1; }
+    .modal-detalle-body { flex:1; overflow-y:auto; padding:1.25rem 1.5rem; }
+    .modal-detalle-footer { padding:1rem 1.5rem; border-top:1px solid var(--gray-200);
+                             display:flex; justify-content:flex-end; }
+
+    .modal-sm { background:#fff; border-radius:12px; padding:2rem; width:100%;
+                max-width:440px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .modal-sm h3 { margin-bottom:1.25rem; font-size:1.05rem; }
+    .modal-footer { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+
+    .prod-table { width:100%; border-collapse:collapse; font-size:.875rem; }
+    .prod-table th { background:var(--gray-100); padding:.4rem .75rem; text-align:left;
+                     font-size:.75rem; color:var(--gray-500); font-weight:700;
+                     text-transform:uppercase; letter-spacing:.05em; }
+    .prod-table td { padding:.45rem .75rem; border-bottom:1px solid var(--gray-100); vertical-align:middle; }
+    .prod-table tr:last-child td { border-bottom:none; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Graneles</h1>
+        <p class="page-subtitle">Materiales a granel</p>
+      </div>
+      {% if user.rol == 'admin' %}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/api/graneles/plantilla" class="btn btn-secondary">⬇ Plantilla</a>
+        <button class="btn btn-secondary" onclick="document.getElementById('inputImportar').click()">⬆ Importar Excel</button>
+        <input type="file" id="inputImportar" accept=".xlsx,.xls" style="display:none" onchange="importarExcel(this)">
+        <button class="btn btn-primary" onclick="abrirModalNuevo()">+ Nuevo granel</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div id="alertImport" style="display:none;margin-bottom:1rem"></div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-body" style="padding:.7rem 1rem;display:flex;gap:1rem;align-items:center">
+        <input type="text" id="inputBuscar" placeholder="Buscar por código o descripción…"
+               oninput="filtrar()" style="flex:1;min-width:200px">
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.875rem;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="chkSoloActivos" onchange="filtrar()" checked>
+          Solo activos
+        </label>
+        <span class="text-muted text-sm" id="totalLabel"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <table id="tablaGraneles">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Descripción</th>
+              <th style="text-align:center">Unidad</th>
+              <th style="text-align:center">Productos asociados</th>
+              <th style="text-align:center">Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyGraneles">
+            <tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: detalle de granel (productos asociados) -->
+<div class="modal-overlay" id="modalDetalle">
+  <div class="modal-detalle">
+    <div class="modal-detalle-header">
+      <div>
+        <div style="font-size:.75rem;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">Granel</div>
+        <h3 id="detalleTitle">—</h3>
+      </div>
+      <span id="detalleEstadoBadge"></span>
+      <button onclick="cerrarDetalle()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400);line-height:1">✕</button>
+    </div>
+
+    <div class="modal-detalle-body" id="detalleBody">
+      <span class="text-muted text-sm">Cargando…</span>
+    </div>
+
+    <div class="modal-detalle-footer" id="detalleFooter">
+      <div style="display:flex;gap:.5rem">
+        {% if user.rol == 'admin' %}
+        <button class="btn btn-secondary btn-sm" id="btnToggleActivo" onclick="toggleActivoDetalle()"></button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                id="btnEliminar" onclick="eliminarGranelDetalle()">Eliminar</button>
+        {% endif %}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="cerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: nuevo / editar granel -->
+<div class="modal-overlay" id="modalForm">
+  <div class="modal-sm">
+    <h3 id="modalFormTitle">Nuevo granel</h3>
+    <div class="form-group">
+      <label>Código *</label>
+      <input type="text" id="inCodigo" placeholder="ej: GR-001" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>Descripción *</label>
+      <input type="text" id="inDescripcion" placeholder="ej: Doxiciclina 200mg Granel">
+    </div>
+    <div class="form-group">
+      <label>Unidad *</label>
+      <select id="inUnidad">
+        <option value="KG">Kg</option>
+        <option value="G">g</option>
+        <option value="L">L</option>
+        <option value="UN">UN</option>
+      </select>
+    </div>
+    <div id="alertForm" class="alert alert-error" style="display:none;margin-top:.5rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalForm()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarForm" onclick="guardarForm()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+  const ES_ADMIN = {{ ('true' if user.rol == 'admin' else 'false') }};
+  const ES_EDITOR = {{ ('true' if user.rol == 'admin' else 'false') }};
+  let _graneles = [];
+  let _granelActual = null;
+  let _editandoId = null;
+
+  // ── Carga y filtrado ───────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', cargarGraneles);
+
+  async function cargarGraneles() {
+    const res = await fetch('/api/graneles');
+    _graneles = await res.json();
+    filtrar();
+  }
+
+  function filtrar() {
+    const q    = document.getElementById('inputBuscar').value.toLowerCase();
+    const solo = document.getElementById('chkSoloActivos').checked;
+    const lista = _graneles.filter(g =>
+      (!solo || g.activo) &&
+      (g.codigo.toLowerCase().includes(q) || g.descripcion.toLowerCase().includes(q))
+    );
+    document.getElementById('totalLabel').textContent = `${lista.length} granel(es)`;
+    renderTabla(lista);
+  }
+
+  function renderTabla(lista) {
+    const tbody = document.getElementById('tbodyGraneles');
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lista.map(g => `
+      <tr class="granel-row" onclick="abrirDetalle(${g.id})" style="${g.activo ? '' : 'opacity:.55'}">
+        <td class="font-mono" style="font-size:.875rem;font-weight:700">${esc(g.codigo)}</td>
+        <td style="font-size:.875rem">${esc(g.descripcion)}</td>
+        <td style="text-align:center">
+          <span class="badge" style="background:#fef3c7;color:#92400e">${fmtUnidad(g.unidad)}</span>
+        </td>
+        <td style="text-align:center">
+          <span class="badge" style="background:#dbeafe;color:#1e40af" id="badge-prod-${g.id}">${g.total_productos}</span>
+        </td>
+        <td style="text-align:center">
+          <span class="badge-${g.activo ? 'activa' : 'inactiva'}" id="badge-activo-${g.id}">
+            ${g.activo ? 'Activo' : 'Inactivo'}
+          </span>
+        </td>
+        <td style="text-align:right">
+          ${ES_EDITOR ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirEditar(${g.id})">Editar</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Detalle ────────────────────────────────────────────────────────────────
+  async function abrirDetalle(id) {
+    _granelActual = _graneles.find(g => g.id === id);
+    if (!_granelActual) return;
+
+    document.getElementById('detalleTitle').textContent =
+      `${_granelActual.codigo} — ${_granelActual.descripcion}`;
+    const badge = document.getElementById('detalleEstadoBadge');
+    badge.className   = `badge-${_granelActual.activo ? 'activa' : 'inactiva'}`;
+    badge.textContent = _granelActual.activo ? 'Activo' : 'Inactivo';
+
+    const btnToggle = document.getElementById('btnToggleActivo');
+    if (btnToggle) btnToggle.textContent = _granelActual.activo ? 'Desactivar' : 'Activar';
+
+    const btnElim = document.getElementById('btnEliminar');
+    if (btnElim) btnElim.style.display = _granelActual.total_productos === 0 ? '' : 'none';
+
+    document.getElementById('detalleBody').innerHTML = '<span class="text-muted text-sm">Cargando productos…</span>';
+    document.getElementById('modalDetalle').classList.add('open');
+
+    // Cargar productos asociados
+    const res = await fetch('/api/productos');
+    const todos = await res.json();
+    const asociados = todos.filter(p => p.granel_id === id);
+
+    const body = document.getElementById('detalleBody');
+    if (!asociados.length) {
+      body.innerHTML = '<p class="text-muted text-sm">No hay productos asociados a este granel.</p>';
+      return;
+    }
+
+    body.innerHTML = `
+      <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:.75rem">
+        ${asociados.length} producto(s) usan este granel:
+      </p>
+      <table class="prod-table">
+        <thead>
+          <tr>
+            <th>Código PT</th>
+            <th>Descripción</th>
+            <th style="text-align:right">Cantidad granel</th>
+            <th style="text-align:center">Unidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${asociados.map(p => `
+            <tr>
+              <td class="font-mono" style="font-size:.82rem;font-weight:700">${esc(p.codigo)}</td>
+              <td style="font-size:.85rem">${esc(p.descripcion)}</td>
+              <td style="text-align:right;font-size:.875rem">
+                ${p.cantidad_granel != null ? parseFloat(p.cantidad_granel).toLocaleString('es-AR', {minimumFractionDigits:2,maximumFractionDigits:4}) : '<span style="color:var(--gray-400)">—</span>'}
+              </td>
+              <td style="text-align:center;font-size:.82rem">${fmtUnidad(_granelActual.unidad)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function cerrarDetalle() {
+    document.getElementById('modalDetalle').classList.remove('open');
+    _granelActual = null;
+  }
+
+  // ── Toggle activo ──────────────────────────────────────────────────────────
+  async function toggleActivoDetalle() {
+    if (!_granelActual) return;
+    const res  = await fetch(`/api/graneles/${_granelActual.id}/toggle`, { method: 'PATCH' });
+    const data = await res.json();
+    if (!res.ok) { alert('Error.'); return; }
+    _granelActual.activo = data.activo;
+    const g = _graneles.find(x => x.id === _granelActual.id);
+    if (g) g.activo = data.activo;
+    const badge = document.getElementById('detalleEstadoBadge');
+    badge.className   = `badge-${data.activo ? 'activa' : 'inactiva'}`;
+    badge.textContent = data.activo ? 'Activo' : 'Inactivo';
+    const btn = document.getElementById('btnToggleActivo');
+    if (btn) btn.textContent = data.activo ? 'Desactivar' : 'Activar';
+    const badgeTabla = document.getElementById(`badge-activo-${_granelActual.id}`);
+    if (badgeTabla) {
+      badgeTabla.className   = `badge-${data.activo ? 'activa' : 'inactiva'}`;
+      badgeTabla.textContent = data.activo ? 'Activo' : 'Inactivo';
+    }
+    filtrar();
+  }
+
+  // ── Eliminar granel ────────────────────────────────────────────────────────
+  async function eliminarGranelDetalle() {
+    if (!_granelActual) return;
+    if (!confirm(`¿Eliminás el granel ${_granelActual.codigo}?`)) return;
+    const res = await fetch(`/api/graneles/${_granelActual.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      _graneles = _graneles.filter(x => x.id !== _granelActual.id);
+      cerrarDetalle();
+      filtrar();
+    } else {
+      const data = await res.json();
+      alert(data.detail || 'Error al eliminar.');
+    }
+  }
+
+  // ── Nuevo / Editar ─────────────────────────────────────────────────────────
+  function abrirModalNuevo() {
+    _editandoId = null;
+    document.getElementById('modalFormTitle').textContent = 'Nuevo granel';
+    document.getElementById('inCodigo').value = '';
+    document.getElementById('inCodigo').disabled = false;
+    document.getElementById('inDescripcion').value = '';
+    document.getElementById('inUnidad').value = 'KG';
+    document.getElementById('alertForm').style.display = 'none';
+    document.getElementById('modalForm').classList.add('open');
+    setTimeout(() => document.getElementById('inCodigo').focus(), 50);
+  }
+
+  function abrirEditar(id) {
+    const g = _graneles.find(x => x.id === id);
+    if (!g) return;
+    _editandoId = id;
+    document.getElementById('modalFormTitle').textContent = `Editar — ${g.codigo}`;
+    document.getElementById('inCodigo').value = g.codigo;
+    document.getElementById('inCodigo').disabled = true;
+    document.getElementById('inDescripcion').value = g.descripcion;
+    document.getElementById('inUnidad').value = g.unidad;
+    document.getElementById('alertForm').style.display = 'none';
+    document.getElementById('modalForm').classList.add('open');
+    setTimeout(() => document.getElementById('inDescripcion').focus(), 50);
+  }
+
+  function cerrarModalForm() {
+    document.getElementById('modalForm').classList.remove('open');
+    _editandoId = null;
+  }
+
+  async function guardarForm() {
+    const al = document.getElementById('alertForm');
+    al.style.display = 'none';
+
+    const codigo      = document.getElementById('inCodigo').value.trim().toUpperCase();
+    const descripcion = document.getElementById('inDescripcion').value.trim();
+    const unidad      = document.getElementById('inUnidad').value;
+
+    if (!descripcion) { al.textContent = 'La descripción es obligatoria.'; al.style.display = ''; return; }
+
+    const btn = document.getElementById('btnGuardarForm');
+    btn.disabled = true;
+
+    let res;
+    if (_editandoId) {
+      res = await fetch(`/api/graneles/${_editandoId}`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ descripcion, unidad }),
+      });
+    } else {
+      if (!codigo) { al.textContent = 'El código es obligatorio.'; al.style.display = ''; btn.disabled = false; return; }
+      res = await fetch('/api/graneles', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ codigo, descripcion, unidad }),
+      });
+    }
+
+    btn.disabled = false;
+
+    if (res.ok) {
+      const data = await res.json();
+      if (_editandoId) {
+        const idx = _graneles.findIndex(x => x.id === _editandoId);
+        if (idx >= 0) _graneles[idx] = data;
+      } else {
+        _graneles.push(data);
+      }
+      cerrarModalForm();
+      filtrar();
+    } else {
+      const err = await res.json();
+      al.textContent = err.detail || 'Error al guardar.';
+      al.style.display = '';
+    }
+  }
+
+  // ── Importar Excel ─────────────────────────────────────────────────────────
+  async function importarExcel(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    input.value = '';
+    const al = document.getElementById('alertImport');
+    al.className = 'alert'; al.textContent = 'Importando…'; al.style.display = '';
+    const res  = await fetch('/api/graneles/importar', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (res.ok) {
+      let msg = `✓ ${data.importados} granel(es) importado(s).`;
+      if (data.errores.length) msg += ` ${data.errores.length} fila(s) con error.`;
+      al.className = data.errores.length ? 'alert alert-warning' : 'alert alert-success';
+      al.innerHTML = msg + (data.errores.length
+        ? '<ul style="margin:.4rem 0 0;font-size:.8rem">' + data.errores.map(e=>`<li>Fila ${e.fila}: ${esc(e.error)}</li>`).join('') + '</ul>'
+        : '');
+      await cargarGraneles();
+    } else {
+      al.className = 'alert alert-error';
+      al.textContent = data.detail || 'Error al importar.';
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => {
+      if (e.target === el) {
+        if (el.id === 'modalDetalle') cerrarDetalle();
+        else if (el.id === 'modalForm') cerrarModalForm();
+      }
+    })
+  );
+</script>
+</body>
+</html>

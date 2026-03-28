@@ -1,0 +1,134 @@
+<!-- Modal resultado de importación — incluir en cada página de maestros -->
+<input type="file" id="fileImport" accept=".xlsx" style="display:none" onchange="ejecutarImport(this)">
+
+<div class="modal-overlay" id="modalImport">
+  <div class="modal" style="max-width:520px">
+    <h3 id="importTitle">Importar desde Excel</h3>
+
+    <!-- Estado: procesando -->
+    <div id="importProcesando" style="display:none;text-align:center;padding:1.5rem 0">
+      <div class="spinner" style="margin:0 auto 1rem"></div>
+      <p class="text-muted text-sm">Procesando archivo…</p>
+    </div>
+
+    <!-- Estado: resultado -->
+    <div id="importResultado" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.25rem">
+        <div style="background:#dcfce7;border-radius:8px;padding:.75rem;text-align:center">
+          <div style="font-size:1.5rem;font-weight:700;color:#16a34a" id="resCreados">0</div>
+          <div style="font-size:.75rem;color:#15803d">Creados</div>
+        </div>
+        <div style="background:#fef9c3;border-radius:8px;padding:.75rem;text-align:center">
+          <div style="font-size:1.5rem;font-weight:700;color:#ca8a04" id="resActualizados">0</div>
+          <div style="font-size:.75rem;color:#a16207">Actualizados</div>
+        </div>
+        <div style="background:#fee2e2;border-radius:8px;padding:.75rem;text-align:center">
+          <div style="font-size:1.5rem;font-weight:700;color:#dc2626" id="resErrores">0</div>
+          <div style="font-size:.75rem;color:#b91c1c">Errores</div>
+        </div>
+      </div>
+
+      <div id="tablaErrores" style="display:none">
+        <p style="font-size:.825rem;font-weight:600;margin-bottom:.4rem;color:var(--danger)">
+          Detalle de errores:
+        </p>
+        <div style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px">
+          <table style="font-size:.8rem">
+            <thead><tr><th style="width:60px">Fila</th><th>Error</th></tr></thead>
+            <tbody id="tbodyErrores"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Estado: error fatal -->
+    <div id="importError" class="alert alert-error" style="display:none"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarImportModal()">Cerrar</button>
+      <button class="btn btn-primary" id="btnVolverImportar" style="display:none"
+              onclick="document.getElementById('fileImport').click()">
+        Importar otro archivo
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let _importUrl = '';
+
+  function abrirImport(url) {
+    _importUrl = url;
+    document.getElementById('fileImport').value = '';
+    document.getElementById('fileImport').click();
+  }
+
+  async function ejecutarImport(input) {
+    if (!input.files.length) return;
+    const file = input.files[0];
+
+    // Mostrar modal en estado "procesando"
+    document.getElementById('importProcesando').style.display = '';
+    document.getElementById('importResultado').style.display  = 'none';
+    document.getElementById('importError').style.display      = 'none';
+    document.getElementById('btnVolverImportar').style.display = 'none';
+    document.getElementById('modalImport').classList.add('open');
+
+    const fd = new FormData();
+    fd.append('file', file);
+
+    try {
+      const res = await fetch(_importUrl, { method: 'POST', body: fd });
+      const data = await res.json();
+
+      document.getElementById('importProcesando').style.display = 'none';
+
+      if (!res.ok) {
+        document.getElementById('importError').textContent = data.detail ?? 'Error al importar.';
+        document.getElementById('importError').style.display = '';
+        document.getElementById('btnVolverImportar').style.display = '';
+        return;
+      }
+
+      document.getElementById('resCreados').textContent     = data.creados;
+      document.getElementById('resActualizados').textContent = data.actualizados;
+      document.getElementById('resErrores').textContent     = data.errores.length;
+      document.getElementById('importResultado').style.display = '';
+      document.getElementById('btnVolverImportar').style.display = '';
+
+      if (data.errores.length) {
+        document.getElementById('tablaErrores').style.display = '';
+        document.getElementById('tbodyErrores').innerHTML = data.errores.map(e =>
+          `<tr><td style="text-align:center">${e.fila}</td><td>${esc(e.error)}</td></tr>`
+        ).join('');
+      } else {
+        document.getElementById('tablaErrores').style.display = 'none';
+      }
+
+      // Recargar tabla principal si hubo éxito
+      if (data.creados + data.actualizados > 0 && typeof cargar === 'function') cargar();
+      if (data.creados + data.actualizados > 0 && typeof cargarFF === 'function') cargarFF();
+
+    } catch (e) {
+      document.getElementById('importProcesando').style.display = 'none';
+      document.getElementById('importError').textContent = 'Error de conexión al importar.';
+      document.getElementById('importError').style.display = '';
+      document.getElementById('btnVolverImportar').style.display = '';
+    }
+  }
+
+  function cerrarImportModal() {
+    document.getElementById('modalImport').classList.remove('open');
+    document.getElementById('fileImport').value = '';
+  }
+
+  document.getElementById('modalImport').addEventListener('click', e => {
+    if (e.target.id === 'modalImport') cerrarImportModal();
+  });
+
+  if (typeof esc !== 'function') {
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+  }
+</script>

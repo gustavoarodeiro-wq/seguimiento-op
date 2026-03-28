@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Entregas — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .filtros-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto;
+      gap: .75rem;
+      align-items: flex-end;
+    }
+    @media (max-width: 1100px) {
+      .filtros-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Entregas</h1>
+        <p class="page-subtitle">Historial de entregas de todas las órdenes</p>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-body" style="padding:.85rem 1.25rem">
+        <div class="filtros-grid">
+          <div class="form-group" style="margin:0">
+            <label>Búsqueda general</label>
+            <input type="text" id="inputBuscar" placeholder="OP, producto, lote, remito…">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Tipo</label>
+            <select id="selectTipo">
+              <option value="">Todos</option>
+              <option value="parcial">Parcial</option>
+              <option value="final">Final</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Fecha desde</label>
+            <input type="date" id="inputDesde">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Fecha hasta</label>
+            <input type="date" id="inputHasta">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Forma farmacéutica</label>
+            <select id="selectForma">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.4rem;padding-bottom:1px">
+            <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+            <button class="btn btn-secondary" onclick="limpiar()">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Resultados</span>
+        <span class="text-muted text-sm" id="totalLabel"></span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>OP</th>
+              <th>Producto</th>
+              <th>Lote PT</th>
+              <th>Cantidad</th>
+              <th>Muestras CC</th>
+              <th>Remito</th>
+              <th>Tipo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyEntregas">
+            <tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    cargarFormas();
+    buscar();
+  });
+
+  document.getElementById('inputBuscar').addEventListener('keydown', e => {
+    if (e.key === 'Enter') buscar();
+  });
+
+  async function cargarFormas() {
+    // Carga las formas farmacéuticas disponibles para el filtro
+    const res = await fetch('/api/formas-farmaceuticas');
+    if (!res.ok) return;
+    const data = await res.json();
+    const sel = document.getElementById('selectForma');
+    data.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.nombre;
+      opt.textContent = f.nombre;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function buscar() {
+    const q      = document.getElementById('inputBuscar').value.trim();
+    const tipo   = document.getElementById('selectTipo').value;
+    const desde  = document.getElementById('inputDesde').value;
+    const hasta  = document.getElementById('inputHasta').value;
+    const forma  = document.getElementById('selectForma').value;
+
+    const params = new URLSearchParams({ limit: 1000 });
+    if (q)     params.set('q', q);
+    if (tipo)  params.set('tipo', tipo);
+    if (desde) params.set('fecha_desde', desde);
+    if (hasta) params.set('fecha_hasta', hasta);
+    if (forma) params.set('forma', forma);
+
+    document.getElementById('tbodyEntregas').innerHTML =
+      '<tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>';
+
+    const res  = await fetch(`/api/entregas?${params}`);
+    const data = await res.json();
+
+    document.getElementById('totalLabel').textContent = `${data.total} entrega(s)`;
+    renderTabla(data.entregas);
+  }
+
+  function limpiar() {
+    document.getElementById('inputBuscar').value = '';
+    document.getElementById('selectTipo').value  = '';
+    document.getElementById('inputDesde').value  = '';
+    document.getElementById('inputHasta').value  = '';
+    document.getElementById('selectForma').value = '';
+    buscar();
+  }
+
+  function renderTabla(entregas) {
+    const tbody = document.getElementById('tbodyEntregas');
+    if (!entregas.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entregas.map(e => `
+      <tr>
+        <td class="text-sm">${fmtFecha(e.fecha_entrega)}</td>
+        <td class="font-mono">${esc(e.op ?? '—')}</td>
+        <td>${esc(e.descripcion_producto ?? '—')}</td>
+        <td class="font-mono text-sm">${esc(e.lote_pt ?? '—')}</td>
+        <td style="font-weight:600">${Math.round(e.cantidad_entregada ?? 0)}</td>
+        <td>${e.muestras_control ? Math.round(e.muestras_control) : '—'}</td>
+        <td class="font-mono text-sm">${esc(e.remito ?? '—')}</td>
+        <td>${e.es_entrega_final
+          ? '<span class="badge badge-entregada">Final</span>'
+          : '<span class="badge">Parcial</span>'}</td>
+        <td><a href="/ordenes/${e.orden_id}" class="btn btn-secondary btn-sm">Ver orden</a></td>
+      </tr>
+    `).join('');
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtFecha(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+</script>
+</body>
+</html>

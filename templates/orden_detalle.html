@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if orden.op %}OP {{ orden.op }}{% else %}Orden #{{ orden.id }}{% endif %} — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .detalle-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:.75rem 1.5rem; }
+    .di-label { font-size:.72rem; font-weight:700; color:var(--gray-400); text-transform:uppercase; letter-spacing:.06em; }
+    .di-value { font-size:.95rem; color:var(--gray-900); margin-top:.15rem; font-weight:500; }
+
+    /* Estado panel */
+    .estado-panel { border-radius:10px; padding:1.25rem 1.5rem; margin-bottom:1rem; border:2px solid; }
+    .panel-revisar     { background:#fffbeb; border-color:#f59e0b; }
+    .panel-faltante    { background:#fff1f2; border-color:#f43f5e; }
+    .panel-para_emitir { background:#f5f3ff; border-color:#8b5cf6; }
+    .panel-emitido     { background:#eff6ff; border-color:#3b82f6; }
+    .panel-en_proceso  { background:#f0fdf4; border-color:#22c55e; }
+    .panel-terminada   { background:#f0fdfa; border-color:#14b8a6; }
+    .panel-entregada   { background:#f0f9ff; border-color:#0ea5e9; }
+    .panel-cancelada   { background:#fafafa; border-color:#d1d5db; }
+    .panel-title { font-weight:700; font-size:1rem; margin-bottom:.75rem; display:flex; align-items:center; gap:.6rem; }
+    .panel-actions { display:flex; gap:.6rem; flex-wrap:wrap; margin-top:1rem; }
+    .checklist { list-style:none; padding:0; margin:.5rem 0; }
+    .checklist li { display:flex; align-items:center; gap:.5rem; padding:.25rem 0; font-size:.875rem; }
+    .check-ok  { color:#16a34a; font-weight:700; }
+    .check-no  { color:#dc2626; font-weight:700; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:0; border-bottom:2px solid var(--gray-200); margin-bottom:1.25rem; }
+    .tab-btn { padding:.6rem 1.2rem; font-size:.875rem; font-weight:600; cursor:pointer; background:none; border:none;
+               color:var(--gray-600); border-bottom:2px solid transparent; margin-bottom:-2px; transition:color .15s; }
+    .tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+    .tab-panel { display:none; } .tab-panel.active { display:block; }
+
+    /* Timeline */
+    .timeline { list-style:none; padding:0; }
+    .timeline li { display:flex; gap:1rem; padding:.75rem 0; border-bottom:1px solid var(--gray-100); }
+    .timeline li:last-child { border-bottom:none; }
+    .tl-dot { width:10px; height:10px; border-radius:50%; background:var(--primary); margin-top:.35rem; flex-shrink:0; }
+    .tl-title { font-size:.875rem; font-weight:600; }
+    .tl-meta  { font-size:.78rem; color:var(--gray-400); margin-top:.1rem; }
+
+    /* Proyección — filas faltante */
+    tr.fila-faltante td { background:#fee2e2 !important; color:#991b1b !important; }
+    tr.fila-faltante:hover td { background:#fecaca !important; }
+    #proyeccionBody table tr { cursor:pointer; }
+    #proyeccionBody table tr:hover td { background:#f9fafb; }
+
+    /* Modales */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:#fff; border-radius:12px; padding:2rem; width:100%; max-width:480px; box-shadow:var(--shadow-lg); }
+    .modal h3 { margin-bottom:1.25rem; font-size:1.1rem; }
+    .modal .form-group + .form-group { margin-top:.75rem; }
+    .modal-footer { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+
+    .item-faltante { padding:.5rem .75rem; cursor:pointer; font-size:.85rem; border-bottom:1px solid var(--gray-100); }
+    .item-faltante:hover { background:var(--primary-light); }
+    .item-faltante .item-codigo { font-family:monospace; font-size:.78rem; color:var(--gray-500); }
+
+    .badge-revisar     { background:#fef3c7; color:#92400e; }
+    .badge-faltante    { background:#ffe4e6; color:#9f1239; }
+    .badge-para_emitir { background:#ede9fe; color:#5b21b6; }
+    .badge-emitido     { background:#dbeafe; color:#1e40af; }
+    .badge-en_proceso  { background:#dcfce7; color:#14532d; }
+    .badge-terminada   { background:#ccfbf1; color:#134e4a; }
+    .badge-entregada   { background:#e0f2fe; color:#0369a1; }
+    .badge-cancelada   { background:#f3f4f6; color:#374151; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+
+    <!-- Header -->
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">{% if orden.op %}OP: {{ orden.op }}{% else %}Orden #{{ orden.id }}{% endif %}</h1>
+        <p class="page-subtitle">{{ orden.descripcion_producto }} · {{ orden.cantidad | int }} {{ orden.unidad.value | fmt_unidad }}</p>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        {% if user.permisos.editar_datos_orden and orden.estado not in ('entregada', 'cancelada') %}
+        <button class="btn btn-secondary btn-sm" onclick="abrirModalDatos()">✏ Editar datos</button>
+        {% endif %}
+        {% if user.permisos.eliminar_orden and orden.estado in ('revisar', 'faltante') %}
+        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" onclick="eliminarOrden()">🗑 Eliminar</button>
+        {% endif %}
+        <a href="/ordenes" class="btn btn-secondary">← Volver</a>
+      </div>
+    </div>
+
+    <!-- Panel de estado -->
+    {% set e = orden.estado %}
+
+    <!-- REVISAR -->
+    {% if e == 'revisar' %}
+    <div class="estado-panel panel-revisar" id="panelEstado">
+      <div class="panel-title">🔍 Revisión de materiales</div>
+      <p style="font-size:.875rem;color:var(--gray-600);margin-bottom:.5rem">
+        Revisá que todos los materiales estén disponibles. Si falta algo, registralo. Si todo está OK, avanzá a <strong>Para Emitir</strong>.
+      </p>
+      <div class="panel-actions">
+        {% if user.permisos.agregar_faltante %}
+        <button class="btn btn-secondary btn-faltante-modal" onclick="abrirModalFaltante()">⚠ Registrar faltante</button>
+        {% endif %}
+        {% if user.permisos.cambiar_estado %}
+        <button class="btn btn-primary" onclick="avanzarEstado('para_emitir','Sin faltantes — orden lista para emitir.')">✓ Pasar a Para Emitir</button>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- FALTANTE -->
+    {% elif e == 'faltante' %}
+    <div class="estado-panel panel-faltante" id="panelEstado">
+      <div class="panel-title">⚠ Faltantes pendientes</div>
+      <p style="font-size:.875rem;color:var(--gray-600);margin-bottom:.5rem">
+        Resolvé todos los faltantes para volver a <strong>Revisar</strong> y continuar el flujo.
+      </p>
+      <div class="panel-actions">
+        {% if user.permisos.agregar_faltante %}
+        <button class="btn btn-secondary btn-faltante-modal" onclick="abrirModalFaltante()">+ Agregar faltante</button>
+        {% endif %}
+        {% if user.permisos.cambiar_estado %}
+        <button class="btn btn-primary" id="btnVolverRevisar" onclick="avanzarEstado('revisar','Todos los faltantes resueltos.')" style="display:none">
+          ✓ Volver a Revisar
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- PARA EMITIR -->
+    {% elif e == 'para_emitir' %}
+    <div class="estado-panel panel-para_emitir" id="panelEstado">
+      <div class="panel-title">📋 Preparación para emitir</div>
+      <ul class="checklist" id="checklistEmitir">
+        <li>
+          <span id="chkOP" class="check-no">✗</span>
+          <span>N° OP asignado <span class="text-muted text-sm" id="valOP"></span></span>
+        </li>
+        <li>
+          <span id="chkLoteGranel" class="check-no">✗</span>
+          <span>Lote Granel asignado <span class="text-muted text-sm" id="valLoteGranel"></span></span>
+        </li>
+        <li>
+          <span id="chkLotePT" class="check-no">✗</span>
+          <span>Lote PT asignado <span class="text-muted text-sm" id="valLotePT"></span></span>
+        </li>
+        <li>
+          <span id="chkVenc" class="check-no">✗</span>
+          <span>Vencimiento cargado <span class="text-muted text-sm" id="valVenc"></span></span>
+        </li>
+      </ul>
+      {% if user.permisos.cambiar_estado %}
+      <div class="panel-actions">
+        <button class="btn btn-secondary" onclick="avanzarEstado('revisar','Vuelve a revisión.')">← Volver a Revisar</button>
+        <button class="btn btn-primary" id="btnEmitir" onclick="avanzarEstado('emitido','Orden emitida.')" disabled>
+          🚀 Emitir Orden
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- EMITIDO -->
+    {% elif e == 'emitido' %}
+    <div class="estado-panel panel-emitido" id="panelEstado">
+      <div class="panel-title">📤 Orden emitida — aguardando recepción</div>
+      <p style="font-size:.875rem;color:var(--gray-600)">
+        La orden fue emitida. Al recibirla en producción, confirmá la recepción para iniciar los subprocesos.
+      </p>
+      {% if user.permisos.cambiar_estado %}
+      <div class="panel-actions">
+        <button class="btn btn-primary" onclick="abrirModalInicioProduccion()">
+          ▶ Confirmar recepción e iniciar producción
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- EN PROCESO -->
+    {% elif e == 'en_proceso' %}
+    <div class="estado-panel panel-en_proceso" id="panelEstado">
+      <div class="panel-title">⚙ En producción</div>
+      {% if user.permisos.manejar_etapas or user.permisos.registrar_entrega %}
+      <div class="panel-actions">
+        {% if user.permisos.registrar_entrega %}
+        <button class="btn btn-secondary" id="btnEntregaParcial" onclick="abrirModalEntrega('parcial')" style="display:none">📦 Registrar entrega parcial</button>
+        <button class="btn btn-primary" id="btnFinalizarProduccion" onclick="abrirModalTerminar()" style="display:none">
+          ✓ Finalizar producción
+        </button>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Card etapas de proceso -->
+    <div class="card" id="cardEtapas" style="margin-bottom:1rem">
+      <div class="card-header">
+        <span class="card-title">Etapas de producción</span>
+      </div>
+      <div id="etapasBody" style="padding:.25rem 0">
+        <span class="text-muted text-sm" style="padding:1rem;display:block">Cargando…</span>
+      </div>
+    </div>
+
+    <!-- TERMINADA -->
+    {% elif e == 'terminada' %}
+    <div class="estado-panel panel-terminada" id="panelEstado">
+      <div class="panel-title">✅ Producción finalizada</div>
+      <p style="font-size:.875rem;color:var(--gray-600)">
+        Cantidad obtenida: <strong>{{ (orden.cantidad_obtenida | int) if orden.cantidad_obtenida else '—' }} {{ orden.unidad.value | fmt_unidad }}</strong>
+        {% if orden.rendimiento %} · Rendimiento: <strong>{{ orden.rendimiento }}%</strong>{% endif %}
+      </p>
+      {% if user.permisos.registrar_entrega %}
+      <div class="panel-actions">
+        <button class="btn btn-secondary" onclick="abrirModalEntrega('normal')">+ Registrar entrega</button>
+        <button class="btn btn-primary" onclick="avanzarEstado('entregada','Entrega total registrada.')">✓ Marcar como Entregada</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ENTREGADA / CANCELADA -->
+    {% elif e == 'entregada' %}
+    <div class="estado-panel panel-entregada">
+      <div class="panel-title">🎉 Orden entregada</div>
+      <p style="font-size:.875rem;color:var(--gray-600)">Esta orden está completa y entregada.</p>
+    </div>
+    {% elif e == 'cancelada' %}
+    <div class="estado-panel panel-cancelada">
+      <div class="panel-title">✕ Orden cancelada</div>
+    </div>
+    {% endif %}
+
+    <!-- Datos de la orden -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header">
+        <span class="card-title">Datos de la orden</span>
+        <span class="badge badge-{{ orden.estado }}" style="font-size:.82rem">
+          {{ {'revisar':'Revisar','faltante':'Faltante','para_emitir':'Para Emitir','emitido':'Emitido',
+              'en_proceso':'En Proceso','terminada':'Terminada','entregada':'Entregada','cancelada':'Cancelada'}
+             .get(orden.estado, orden.estado) }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="detalle-grid">
+          <div class="detalle-item"><div class="di-label">N° OP</div><div class="di-value font-mono" id="dispOP">{{ orden.op or '—' }}</div></div>
+          <div class="detalle-item"><div class="di-label">Código producto</div><div class="di-value font-mono">{{ orden.codigo_producto }}</div></div>
+          <div class="detalle-item"><div class="di-label">Lote Granel</div><div class="di-value font-mono" id="dispLoteGranel">{{ orden.lote_granel or '—' }}</div></div>
+          <div class="detalle-item"><div class="di-label">Lote PT</div><div class="di-value font-mono" id="dispLotePT">{{ orden.lote_pt or '—' }}</div></div>
+          <div class="detalle-item"><div class="di-label">Vencimiento</div><div class="di-value" id="dispVenc">{{ orden.fecha_vencimiento.strftime('%m/%Y') if orden.fecha_vencimiento else '—' }}</div></div>
+          <div class="detalle-item"><div class="di-label">Cantidad solicitada</div><div class="di-value">{{ orden.cantidad | int }} {{ orden.unidad.value | fmt_unidad }}</div></div>
+          {% if orden.cantidad_obtenida %}
+          <div class="detalle-item"><div class="di-label">Cantidad obtenida</div><div class="di-value">{{ orden.cantidad_obtenida | int }} {{ orden.unidad.value | fmt_unidad }}</div></div>
+          <div class="detalle-item"><div class="di-label">Rendimiento</div><div class="di-value">{{ orden.rendimiento }}%</div></div>
+          {% endif %}
+          <div class="detalle-item"><div class="di-label">Fecha carga</div>
+            <div class="di-value">{{ orden.fecha_carga.strftime('%d/%m/%Y') if orden.fecha_carga else '—' }}</div></div>
+          {% if orden.fecha_inicio_produccion %}
+          <div class="detalle-item"><div class="di-label">Inicio producción</div>
+            <div class="di-value">{{ orden.fecha_inicio_produccion.strftime('%d/%m/%Y %H:%M') }}</div></div>
+          {% endif %}
+          {% if orden.fecha_terminado %}
+          <div class="detalle-item"><div class="di-label">Fecha terminado</div>
+            <div class="di-value">{{ orden.fecha_terminado.strftime('%d/%m/%Y %H:%M') }}</div></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Proyección de materiales (solo si hay fórmula) -->
+    {% if orden.estado in ('revisar', 'faltante') %}
+    <div class="card" id="cardProyeccion" style="margin-bottom:1rem;display:none">
+      <div class="card-header" style="cursor:pointer;user-select:none" onclick="toggleProyeccion()">
+        <span class="card-title">Proyección de materiales</span>
+        <button id="btnCollapseProyeccion"
+                style="margin-left:auto;background:none;border:none;font-size:1.2rem;font-weight:700;cursor:pointer;color:var(--gray-400);line-height:1;padding:0 .25rem"
+                title="Expandir / Contraer">+</button>
+      </div>
+      <div id="proyeccionWrap" style="display:none">
+        <div class="card-body" id="proyeccionBody" style="padding-bottom:.5rem">
+          <span class="text-muted text-sm">Cargando…</span>
+        </div>
+        <div id="proyeccionFooter" style="display:none;padding:.6rem 1.25rem;border-top:1px solid var(--gray-200)">
+          <button id="btnRegistrarMarcados" class="btn btn-sm"
+                  style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                  onclick="registrarFaltantesMarcados()">⚠ Registrar faltantes (0)</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <div class="card">
+      <div class="card-body" style="padding-bottom:0">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('historial',this)">Historial</button>
+          <button class="tab-btn" onclick="switchTab('faltantes',this)">
+            Faltantes <span id="badgeFaltantes"></span>
+          </button>
+          <button class="tab-btn" onclick="switchTab('entregas',this)">Entregas</button>
+          <button class="tab-btn" onclick="switchTab('etapas',this)">Etapas</button>
+        </div>
+      </div>
+      <div id="tab-historial" class="tab-panel active" style="padding:1.25rem">
+        <ul class="timeline" id="listHistorial"><li><span class="text-muted text-sm">Cargando…</span></li></ul>
+      </div>
+      <div id="tab-faltantes" class="tab-panel" style="padding:1.25rem">
+        <div id="listFaltantes"><span class="text-muted text-sm">Cargando…</span></div>
+      </div>
+      <div id="tab-entregas" class="tab-panel" style="padding:1.25rem">
+        <div id="listEntregas"><span class="text-muted text-sm">Cargando…</span></div>
+      </div>
+      <div id="tab-etapas" class="tab-panel" style="padding:1.25rem">
+        <div id="listEtapas"><span class="text-muted text-sm">Cargando…</span></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Modal: editar datos (OP, lotes, vencimiento) -->
+<div class="modal-overlay" id="modalDatos">
+  <div class="modal">
+    <h3>Editar datos de la orden</h3>
+    <div class="form-group">
+      <label>N° OP</label>
+      <input type="text" id="inOP" placeholder="ej: OP-2025-001">
+    </div>
+    <div class="form-group">
+      <label>Lote Granel</label>
+      <input type="text" id="inLoteGranel" placeholder="ej: LG-2025-001" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>Lote PT</label>
+      <input type="text" id="inLotePT" placeholder="ej: LPT-2025-001" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>Vencimiento (MM/AAAA)</label>
+      <input type="text" id="inVenc" placeholder="ej: 06/2027" maxlength="7" oninput="fmtVenc(this)">
+    </div>
+    <div id="alertDatos" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalDatos')">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarDatos" onclick="guardarDatos()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: registrar faltante -->
+<div class="modal-overlay" id="modalFaltante">
+  <div class="modal" style="max-width:560px">
+    <h3>Registrar faltantes</h3>
+
+    <!-- Buscador -->
+    <div style="display:flex;gap:.5rem;align-items:flex-end;margin-bottom:.5rem">
+      <div class="form-group" style="margin:0;width:130px;flex-shrink:0">
+        <label>Tipo</label>
+        <select id="tipoFaltante" onchange="cargarItemsFaltante()">
+          <option value="MP">Materia Prima</option>
+          <option value="ME">Mat. Empaque</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;position:relative">
+        <label>Buscar por código o nombre</label>
+        <input type="text" id="buscadorFaltante" placeholder="Escribí para buscar…"
+               oninput="filtrarItemsFaltante(this.value)" autocomplete="off">
+        <div id="listaItemsFaltante" style="
+          position:absolute;left:0;right:0;top:100%;z-index:50;
+          border:1px solid var(--gray-200);border-top:none;border-radius:0 0 6px 6px;
+          max-height:160px;overflow-y:auto;background:#fff;box-shadow:var(--shadow-sm);display:none;
+        "></div>
+      </div>
+      <div style="padding-bottom:1px">
+        <button class="btn btn-secondary" onclick="agregarALista()" style="white-space:nowrap">+ Agregar</button>
+      </div>
+    </div>
+
+    <!-- Lista de ítems a registrar -->
+    <div id="listaFaltantesPendientes" style="
+      min-height:60px;max-height:200px;overflow-y:auto;
+      border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;margin-bottom:.75rem;
+      background:var(--gray-50);
+    ">
+      <p class="text-muted text-sm" id="msgListaVacia" style="text-align:center;padding:.5rem 0">
+        Buscá y agregá ítems a la lista.
+      </p>
+    </div>
+
+    <div id="alertFaltante" class="alert alert-error" style="display:none;margin-bottom:.5rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalFaltante')">Cancelar</button>
+      <button class="btn btn-primary" id="btnFaltante" onclick="confirmarFaltante()">Registrar todos</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: todos los faltantes resueltos → avanzar estado -->
+<div class="modal-overlay" id="modalAvanzarRevisar">
+  <div class="modal" style="max-width:460px">
+    <h3 style="color:#16a34a">✓ Todos los faltantes resueltos</h3>
+    <p style="font-size:.875rem;color:var(--gray-600);margin:.5rem 0 1.25rem">
+      Se resolvieron todos los materiales faltantes. ¿A dónde querés continuar?
+    </p>
+    <div style="display:flex;flex-direction:column;gap:.6rem;margin-bottom:1.25rem">
+      <button class="btn btn-primary" onclick="avanzarDesdeResueltos('para_emitir')" style="justify-content:flex-start;text-align:left;padding:.65rem 1rem">
+        <div style="font-weight:700">→ Avanzar a Para Emitir</div>
+        <div style="font-size:.78rem;font-weight:400;opacity:.85">Continuar con el flujo normal de la orden</div>
+      </button>
+      <button class="btn btn-secondary" onclick="avanzarDesdeResueltos('revisar')" style="justify-content:flex-start;text-align:left;padding:.65rem 1rem">
+        <div style="font-weight:700">← Volver a Revisar</div>
+        <div style="font-size:.78rem;font-weight:400;opacity:.85">Revisar la orden antes de continuar</div>
+      </button>
+    </div>
+    <div style="text-align:right">
+      <button class="btn btn-secondary btn-sm" onclick="cerrarModal('modalAvanzarRevisar')">Quedarme en Faltante</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar faltantes marcados desde proyección -->
+<div class="modal-overlay" id="modalConfirmarFaltantes">
+  <div class="modal" style="max-width:500px">
+    <h3>Registrar faltantes</h3>
+    <p style="font-size:.875rem;color:var(--gray-600);margin-bottom:.75rem">Los siguientes materiales serán registrados como faltantes:</p>
+    <ul id="listFaltantesMarcados" style="list-style:none;padding:0;margin-bottom:1rem;max-height:220px;overflow-y:auto"></ul>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalConfirmarFaltantes')">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfirmarFaltantes" onclick="confirmarRegistroFaltantes()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: editar observación de faltante -->
+<div class="modal-overlay" id="modalObsFaltante">
+  <div class="modal" style="max-width:460px">
+    <h3>Observación del faltante</h3>
+    <p id="modalObsFaltanteDesc" style="font-size:.875rem;color:var(--gray-600);margin-bottom:.75rem"></p>
+    <div class="form-group">
+      <label>Observación</label>
+      <textarea id="inputObsFaltante" rows="4" placeholder="Ej: Pedido realizado el 15/03, esperamos entrega la semana próxima…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalObsFaltante')">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarObs" onclick="guardarObsFaltante()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: iniciar producción -->
+<div class="modal-overlay" id="modalInicioProduccion">
+  <div class="modal">
+    <h3>Confirmar inicio de producción</h3>
+    <p style="color:var(--gray-600);font-size:.875rem;margin-bottom:1rem">
+      Esto pasará la orden a <strong>En Proceso</strong> y registrará la fecha y hora de inicio.
+    </p>
+    <div class="form-group">
+      <label>Observaciones (opcional)</label>
+      <textarea id="obsInicioProduccion" rows="2" placeholder="Notas al iniciar producción"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalInicioProduccion')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarInicioProduccion()">▶ Iniciar producción</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: finalizar producción -->
+<div class="modal-overlay" id="modalTerminar">
+  <div class="modal">
+    <h3>Finalizar producción</h3>
+    <div class="form-group">
+      <label>Cantidad obtenida *</label>
+      <input type="number" id="cantObtenida" step="1" min="0" placeholder="Ingresá la cantidad producida">
+    </div>
+    <div class="form-group">
+      <label>Observaciones</label>
+      <textarea id="obsTerminar" rows="2" placeholder="Opcional"></textarea>
+    </div>
+    <div id="alertTerminar" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalTerminar')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarTerminar()">✓ Finalizar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: editar entrega -->
+<div class="modal-overlay" id="modalEditarEntrega">
+  <div class="modal" style="max-width:420px">
+    <h3>Editar entrega</h3>
+    <input type="hidden" id="editEntregaId">
+    <div class="form-group">
+      <label>Cantidad entregada *</label>
+      <input type="number" id="editCantEntrega" step="1" min="1" placeholder="0">
+    </div>
+    <div class="form-group">
+      <label>Muestras de control de calidad</label>
+      <input type="number" id="editMuestrasCC" step="1" min="0" placeholder="0">
+    </div>
+    <div class="form-group">
+      <label>N° Remito</label>
+      <input type="text" id="editRemitoEntrega" placeholder="ej: R-0001-00012345">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalEditarEntrega')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEdicionEntrega()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: estuchado parcial o final -->
+<div class="modal-overlay" id="modalEstuchadoParcial">
+  <div class="modal" style="max-width:420px">
+    <h3 id="tituloModalEstuchado">Finalizar Estuchado</h3>
+    <p style="font-size:.85rem;color:var(--gray-500);margin:.25rem 0 1.25rem">
+      Seleccioná el tipo de estuchado:
+    </p>
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+      <button class="btn btn-secondary" style="text-align:left;padding:.75rem 1rem"
+              onclick="confirmarCompletarEtapa(true)">
+        <div style="font-weight:700;margin-bottom:.2rem">📦 Parcial</div>
+        <div style="font-size:.8rem;color:var(--gray-500)">La etapa quedará disponible para el próximo estuchado</div>
+      </button>
+      <button class="btn btn-primary" style="text-align:left;padding:.75rem 1rem"
+              onclick="confirmarCompletarEtapa(false)">
+        <div style="font-weight:700;margin-bottom:.2rem">✓ Final</div>
+        <div style="font-size:.8rem;opacity:.8">Este es el último estuchado — se registrará la entrega final</div>
+      </button>
+      <button class="btn" style="margin-top:.1rem" onclick="cerrarModal('modalEstuchadoParcial')">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: registrar entrega -->
+<div class="modal-overlay" id="modalEntrega">
+  <div class="modal" style="max-width:500px">
+    <h3 id="tituloModalEntrega">Registrar entrega</h3>
+
+    <!-- Resumen de cantidades anteriores -->
+    <div style="background:var(--gray-50);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.875rem;display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+      <span style="color:var(--gray-500)">Ya entregado</span>
+      <span id="resYaEntregado" style="font-weight:600;text-align:right">—</span>
+      <span style="color:var(--gray-500)">Muestras CC previas</span>
+      <span id="resMuestrasAnt" style="font-weight:600;text-align:right;color:#d97706">—</span>
+      <span style="color:var(--gray-500);font-weight:600">Total producido hasta ahora</span>
+      <span id="resTotalProd" style="font-weight:700;text-align:right;color:var(--primary)">—</span>
+    </div>
+
+    <div class="form-group">
+      <label>Cantidad a entregar *</label>
+      <input type="number" id="cantEntrega" step="1" min="1" placeholder="0">
+    </div>
+    <div class="form-group">
+      <label>Muestras de control de calidad</label>
+      <input type="number" id="muestrasCC" step="1" min="0" placeholder="0">
+    </div>
+    <div class="form-group">
+      <label>N° Remito</label>
+      <input type="text" id="remitoEntrega" placeholder="ej: R-0001-00012345">
+    </div>
+    <div class="form-group" id="rowEntregaFinal">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+        <input type="checkbox" id="esEntregaFinal">
+        Entrega final
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalEntrega')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarEntrega()">Registrar entrega</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+
+  const ORDEN_ID       = {{ orden.id }};
+  const ESTADO         = {{ orden.estado | tojson }};
+  const ROL            = {{ user.rol | tojson }};
+  const PERMISOS       = {{ user.permisos | tojson }};
+  const puedeOperar    = PERMISOS.manejar_etapas || PERMISOS.agregar_faltante;
+  const puedeSupervisar = PERMISOS.registrar_entrega || PERMISOS.cambiar_estado;
+  const LABELS   = {
+    revisar:'Revisar', faltante:'Faltante', para_emitir:'Para Emitir',
+    emitido:'Emitido', en_proceso:'En Proceso', terminada:'Terminada',
+    entregada:'Entregada', cancelada:'Cancelada'
+  };
+
+  // Totales de la orden (actualizados al cargar detalle)
+  let _ordenData = {};
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  // ── Carga inicial ─────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    cargarDetalle();
+    if (ESTADO === 'para_emitir') actualizarChecklist();
+    cargarProyeccion();
+    if (ESTADO === 'en_proceso') cargarEtapasProceso();
+  });
+
+  async function cargarDetalle() {
+    const res  = await fetch(`/api/ordenes/${ORDEN_ID}`);
+    const data = await res.json();
+    _ordenData = data;
+    renderHistorial(data.historial);
+    renderFaltantes(data.faltantes);
+    renderEntregas(data.entregas);
+    renderEtapasHistorial(data.etapas);
+
+    // Badge en tab faltantes
+    const pend = data.faltantes.filter(f => !f.resuelto).length;
+    const badge = document.getElementById('badgeFaltantes');
+    if (badge) badge.innerHTML = pend > 0
+      ? `<span class="badge badge-faltante" style="font-size:.7rem;padding:.1rem .4rem">${pend}</span>` : '';
+
+    // Botón volver a revisar (estado FALTANTE)
+    if (ESTADO === 'faltante') {
+      const btn = document.getElementById('btnVolverRevisar');
+      if (btn) btn.style.display = pend === 0 ? '' : 'none';
+    }
+  }
+
+  // ── Checklist para_emitir ─────────────────────────────────────────────────
+  function actualizarChecklist() {
+    const op    = document.getElementById('dispOP')?.textContent.trim();
+    const lg    = document.getElementById('dispLoteGranel')?.textContent.trim();
+    const lpt   = document.getElementById('dispLotePT')?.textContent.trim();
+    const venc  = document.getElementById('dispVenc')?.textContent.trim();
+
+    const set = (id, valId, val) => {
+      const ok = val && val !== '—';
+      const el = document.getElementById(id);
+      const ve = document.getElementById(valId);
+      if (el) { el.textContent = ok ? '✓' : '✗'; el.className = ok ? 'check-ok' : 'check-no'; }
+      if (ve) ve.textContent = ok ? `(${val})` : '';
+      return ok;
+    };
+    const a = set('chkOP',         'valOP',         op);
+    const b = set('chkLoteGranel', 'valLoteGranel', lg);
+    const c = set('chkLotePT',     'valLotePT',     lpt);
+    const d = set('chkVenc',       'valVenc',        venc);
+
+    const btn = document.getElementById('btnEmitir');
+    if (btn) btn.disabled = !(a && b && c && d);
+  }
+
+  // ── Avanzar estado (genérico) ─────────────────────────────────────────────
+  async function avanzarEstado(estado, obs = null) {
+    // Bloquear avance si hay faltantes pendientes (excepto al quedarse en faltante o cancelar)
+    if (ESTADO === 'faltante' && estado !== 'cancelada') {
+      const pend = document.querySelectorAll('#listFaltantes .badge-faltante').length;
+      if (pend > 0) {
+        alert(`No podés avanzar: hay ${pend} faltante(s) sin resolver.`);
+        return;
+      }
+    }
+    if (!confirm(`¿Confirmás pasar a "${LABELS[estado] ?? estado}"?`)) return;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/estado`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ estado, observaciones: obs }),
+    });
+    if (res.ok) location.reload();
+    else { const e = await res.json(); alert(e.detail || 'Error al cambiar estado.'); }
+  }
+
+  // ── Proyección de materiales ──────────────────────────────────────────────
+  const ORDEN_CANTIDAD = {{ orden.cantidad }};
+  const ORDEN_UNIDAD   = {{ orden.unidad.value | tojson }};
+  let _marcadosFaltante = {};   // { compId: {tipo, codigo, descripcion} }
+  let _proyExpanded = false;
+
+  function toggleProyeccion() {
+    _proyExpanded = !_proyExpanded;
+    document.getElementById('proyeccionWrap').style.display = _proyExpanded ? '' : 'none';
+    document.getElementById('btnCollapseProyeccion').textContent = _proyExpanded ? '−' : '+';
+  }
+
+  async function cargarProyeccion() {
+    const card = document.getElementById('cardProyeccion');
+    if (!card) return;
+    const codigo = {{ orden.codigo_producto | tojson }};
+    const res  = await fetch(`/api/formulas/${encodeURIComponent(codigo)}`);
+    const data = await res.json();
+    if (!data.tiene_formula || !data.componentes.length) return;
+
+    _formulaComponentes = data.componentes;
+    card.style.display = '';
+
+    // Ocultar botones de modal de faltante ya que se usa la proyección
+    document.querySelectorAll('.btn-faltante-modal').forEach(b => b.style.display = 'none');
+
+    const rows = data.componentes.map(c => {
+      const raw = c.cantidad * ORDEN_CANTIDAD;
+      let req;
+      if (c.tipo === 'ME' || c.unidad === 'UN') {
+        req = Math.ceil(raw).toLocaleString('es-AR');
+      } else {
+        req = (Math.round(raw * 100) / 100).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+      }
+      return `<tr id="proy-row-${c.id}">
+        <td class="font-mono text-sm">${esc(c.componente_codigo)}</td>
+        <td>${esc(c.componente_descripcion)}</td>
+        <td style="text-align:right;font-weight:600">${req}</td>
+        <td style="color:var(--gray-500)">${fmtUnidad(c.unidad)}</td>
+        <td style="text-align:right;padding-right:.75rem">
+          <button id="btn-falt-${c.id}" class="btn btn-sm"
+                  style="font-size:.72rem;padding:.2rem .55rem;background:#f3f4f6;color:var(--gray-600);border:1px solid var(--gray-300)"
+                  data-compid="${c.id}" data-tipo="${c.tipo}"
+                  data-codigo="${esc(c.componente_codigo)}" data-desc="${esc(c.componente_descripcion)}"
+                  onclick="toggleFaltanteRow(this)">Faltante</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('proyeccionBody').innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th><th>Descripción</th>
+            <th style="text-align:right">Total</th><th>Unidad</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function toggleFaltanteRow(btn) {
+    const compId    = btn.dataset.compid;
+    const tipo      = btn.dataset.tipo;
+    const codigo    = btn.dataset.codigo;
+    const descripcion = btn.dataset.desc;
+    const row = document.getElementById(`proy-row-${compId}`);
+    if (_marcadosFaltante[compId]) {
+      delete _marcadosFaltante[compId];
+      if (row) row.classList.remove('fila-faltante');
+      btn.textContent = 'Faltante';
+      btn.style.background = '#f3f4f6'; btn.style.color = 'var(--gray-600)'; btn.style.borderColor = 'var(--gray-300)';
+    } else {
+      _marcadosFaltante[compId] = { tipo, codigo, descripcion };
+      if (row) row.classList.add('fila-faltante');
+      btn.textContent = '✓ Marcado';
+      btn.style.background = '#fee2e2'; btn.style.color = '#991b1b'; btn.style.borderColor = '#fca5a5';
+    }
+    _actualizarBtnRegistrar();
+  }
+
+  function _actualizarBtnRegistrar() {
+    const n = Object.keys(_marcadosFaltante).length;
+    const footer = document.getElementById('proyeccionFooter');
+    const btn    = document.getElementById('btnRegistrarMarcados');
+    if (footer) footer.style.display = n > 0 ? '' : 'none';
+    if (btn) btn.textContent = `⚠ Registrar faltantes marcados (${n})`;
+  }
+
+  function registrarFaltantesMarcados() {
+    const entries = Object.entries(_marcadosFaltante);
+    if (!entries.length) return;
+    // Armar lista en el modal
+    const ul = document.getElementById('listFaltantesMarcados');
+    ul.innerHTML = entries.map(([, {tipo, codigo, descripcion}]) =>
+      `<li style="padding:.25rem 0;font-size:.875rem;border-bottom:1px solid var(--gray-100)">
+        <span style="font-size:.72rem;font-weight:700;background:${tipo==='MP'?'#dbeafe':'#ede9fe'};color:${tipo==='MP'?'#1e40af':'#5b21b6'};padding:.1rem .4rem;border-radius:4px;margin-right:.4rem">${esc(tipo)}</span>
+        <span class="font-mono" style="font-size:.8rem;color:var(--gray-500);margin-right:.4rem">${esc(codigo)}</span>
+        ${esc(descripcion)}
+      </li>`
+    ).join('');
+    document.getElementById('modalConfirmarFaltantes').classList.add('open');
+  }
+
+  async function confirmarRegistroFaltantes() {
+    const entries = Object.entries(_marcadosFaltante);
+    const btn = document.getElementById('btnConfirmarFaltantes');
+    btn.disabled = true; btn.textContent = 'Registrando…';
+    for (const [, {tipo, codigo, descripcion}] of entries) {
+      await fetch(`/api/ordenes/${ORDEN_ID}/faltantes`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tipo, codigo, descripcion }),
+      });
+    }
+    location.reload();
+  }
+
+  let _faltanteEditandoId = null;
+
+  function abrirModalObs(id, descripcion, obsActual) {
+    _faltanteEditandoId = id;
+    document.getElementById('modalObsFaltanteDesc').textContent = descripcion;
+    document.getElementById('inputObsFaltante').value = obsActual ?? '';
+    document.getElementById('btnGuardarObs').disabled = false;
+    document.getElementById('modalObsFaltante').classList.add('open');
+    setTimeout(() => document.getElementById('inputObsFaltante').focus(), 50);
+  }
+
+  async function guardarObsFaltante() {
+    const obs = document.getElementById('inputObsFaltante').value.trim() || null;
+    const btn = document.getElementById('btnGuardarObs');
+    btn.disabled = true;
+    const res = await fetch(`/api/faltantes/${_faltanteEditandoId}/observacion`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ observacion: obs }),
+    });
+    if (res.ok) {
+      cerrarModal('modalObsFaltante');
+      await cargarDetalle();
+    } else {
+      btn.disabled = false;
+      alert('Error al guardar.');
+    }
+  }
+
+  // ── Faltante ──────────────────────────────────────────────────────────────
+  let _itemsFaltante = [];
+  let _itemSeleccionado = null;
+  let _listaParaRegistrar = []; // [{tipo, item}]
+
+  let _formulaComponentes = null;  // null = sin fórmula cargada aún
+
+  async function _cargarFormula() {
+    if (_formulaComponentes !== null) return;
+    const codigo = {{ orden.codigo_producto | tojson }};
+    const res  = await fetch(`/api/formulas/${encodeURIComponent(codigo)}`);
+    const data = await res.json();
+    _formulaComponentes = data.tiene_formula ? data.componentes : [];
+  }
+
+  async function cargarItemsFaltante() {
+    const tipo = document.getElementById('tipoFaltante').value;
+    _itemSeleccionado = null;
+    document.getElementById('buscadorFaltante').value = '';
+    document.getElementById('listaItemsFaltante').style.display = 'none';
+
+    await _cargarFormula();
+
+    if (_formulaComponentes.length > 0) {
+      // Filtrar por tipo desde la fórmula
+      _itemsFaltante = _formulaComponentes
+        .filter(c => c.tipo === tipo)
+        .map(c => ({ id: c.id, codigo: c.componente_codigo, descripcion: c.componente_descripcion }));
+    } else {
+      // Sin fórmula: traer lista completa
+      const url = tipo === 'MP' ? '/api/materias-primas' : '/api/materiales-empaque';
+      const res  = await fetch(url);
+      const data = await res.json();
+      _itemsFaltante = data.items ?? data;
+    }
+  }
+
+  function filtrarItemsFaltante(q) {
+    const lista = document.getElementById('listaItemsFaltante');
+    if (!q.trim()) { lista.style.display = 'none'; return; }
+    const term = q.toLowerCase();
+    const filtrados = _itemsFaltante.filter(i =>
+      i.codigo.toLowerCase().includes(term) || i.descripcion.toLowerCase().includes(term)
+    ).slice(0, 30);
+    lista.innerHTML = filtrados.length
+      ? filtrados.map(i => `
+          <div class="item-faltante" onclick='seleccionarItemFaltante(${JSON.stringify(i)})'>
+            <div>${esc(i.descripcion)}</div>
+            <div class="item-codigo">${esc(i.codigo)}</div>
+          </div>`).join('')
+      : '<div class="item-faltante" style="color:var(--gray-400)">Sin resultados.</div>';
+    lista.style.display = '';
+  }
+
+  function seleccionarItemFaltante(item) {
+    _itemSeleccionado = item;
+    document.getElementById('buscadorFaltante').value = `${item.codigo} — ${item.descripcion}`;
+    document.getElementById('listaItemsFaltante').style.display = 'none';
+  }
+
+  function agregarALista() {
+    if (!_itemSeleccionado) {
+      const al = document.getElementById('alertFaltante');
+      al.textContent = 'Primero buscá y seleccioná un ítem.'; al.style.display = ''; return;
+    }
+    const tipo = document.getElementById('tipoFaltante').value;
+    const key = `${tipo}-${_itemSeleccionado.id}`;
+    if (_listaParaRegistrar.find(x => x.key === key)) {
+      document.getElementById('alertFaltante').style.display = 'none';
+      document.getElementById('buscadorFaltante').value = '';
+      _itemSeleccionado = null;
+      return;
+    }
+    _listaParaRegistrar.push({ key, tipo, item: _itemSeleccionado });
+    document.getElementById('buscadorFaltante').value = '';
+    _itemSeleccionado = null;
+    document.getElementById('alertFaltante').style.display = 'none';
+    renderListaPendiente();
+  }
+
+  function quitarDeLista(key) {
+    _listaParaRegistrar = _listaParaRegistrar.filter(x => x.key !== key);
+    renderListaPendiente();
+  }
+
+  function renderListaPendiente() {
+    const cont = document.getElementById('listaFaltantesPendientes');
+    const msg  = document.getElementById('msgListaVacia');
+    if (!_listaParaRegistrar.length) {
+      msg.style.display = '';
+      cont.querySelectorAll('.faltante-row').forEach(el => el.remove());
+      return;
+    }
+    msg.style.display = 'none';
+    cont.querySelectorAll('.faltante-row').forEach(el => el.remove());
+    _listaParaRegistrar.forEach(({key, tipo, item}) => {
+      const div = document.createElement('div');
+      div.className = 'faltante-row';
+      div.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:6px;margin-bottom:.25rem;background:#fff;border:1px solid var(--gray-200)';
+      div.innerHTML = `
+        <span style="font-size:.72rem;font-weight:700;background:${tipo==='MP'?'#dbeafe':'#ede9fe'};
+              color:${tipo==='MP'?'#1e40af':'#5b21b6'};padding:.1rem .4rem;border-radius:4px">${esc(tipo)}</span>
+        <span style="font-family:monospace;font-size:.8rem;color:var(--gray-500)">${esc(item.codigo)}</span>
+        <span style="flex:1;font-size:.85rem">${esc(item.descripcion)}</span>
+        <span onclick="quitarDeLista('${key}')" style="cursor:pointer;color:var(--gray-400);font-size:1rem;line-height:1" title="Quitar">✕</span>
+      `;
+      cont.appendChild(div);
+    });
+  }
+
+  function abrirModalFaltante() {
+    _listaParaRegistrar = [];
+    _itemSeleccionado = null;
+    document.getElementById('buscadorFaltante').value = '';
+    document.getElementById('listaItemsFaltante').style.display = 'none';
+    document.getElementById('alertFaltante').style.display = 'none';
+    document.getElementById('tipoFaltante').value = 'MP';
+    renderListaPendiente();
+    document.getElementById('modalFaltante').classList.add('open');
+    cargarItemsFaltante();
+    setTimeout(() => document.getElementById('buscadorFaltante').focus(), 50);
+  }
+
+  async function confirmarFaltante() {
+    if (!_listaParaRegistrar.length) {
+      const al = document.getElementById('alertFaltante');
+      al.textContent = 'Agregá al menos un ítem a la lista.'; al.style.display = ''; return;
+    }
+    const btn = document.getElementById('btnFaltante');
+    btn.disabled = true;
+    btn.textContent = 'Registrando…';
+    for (const {tipo, item} of _listaParaRegistrar) {
+      await fetch(`/api/ordenes/${ORDEN_ID}/faltantes`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tipo, codigo: item.codigo, descripcion: item.descripcion, item_id: item.id }),
+      });
+    }
+    location.reload();
+  }
+
+  async function resolverFaltante(id, btn) {
+    btn.disabled = true;
+    const res = await fetch(`/api/faltantes/${id}/resolver`, { method: 'PATCH' });
+    if (res.ok) {
+      const data = await res.json();
+      await cargarDetalle();
+      if (ESTADO === 'faltante' && data.faltantes_pendientes === 0) {
+        document.getElementById('modalAvanzarRevisar').classList.add('open');
+      }
+    } else { btn.disabled = false; alert('Error al resolver.'); }
+  }
+
+  function avanzarDesdeResueltos(estado) {
+    cerrarModal('modalAvanzarRevisar');
+    avanzarEstado(estado, 'Todos los faltantes resueltos.');
+  }
+
+  // ── Iniciar producción ────────────────────────────────────────────────────
+  async function confirmarInicioProduccion() {
+    const obs = document.getElementById('obsInicioProduccion').value.trim() || 'Producción iniciada.';
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/estado`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: 'en_proceso', observaciones: obs }),
+    });
+    if (res.ok) location.reload();
+    else { const e = await res.json(); alert(e.detail || 'Error.'); }
+  }
+
+  // ── Finalizar producción ──────────────────────────────────────────────────
+  async function confirmarTerminar() {
+    const cant = Math.round(parseFloat(document.getElementById('cantObtenida').value));
+    if (!cant || cant <= 0) {
+      const al = document.getElementById('alertTerminar');
+      al.textContent = 'Ingresá la cantidad obtenida.'; al.style.display = ''; return;
+    }
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/estado`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        estado: 'terminada',
+        cantidad_obtenida: cant,
+        observaciones: document.getElementById('obsTerminar').value.trim() || null,
+      }),
+    });
+    if (res.ok) location.reload();
+    else { const e = await res.json(); alert(e.detail || 'Error.'); }
+  }
+
+  // ── Entrega ───────────────────────────────────────────────────────────────
+  async function confirmarEntrega() {
+    const cant = parseInt(document.getElementById('cantEntrega').value);
+    if (!cant || cant <= 0) { alert('Ingresá una cantidad válida.'); return; }
+    const muestras = parseInt(document.getElementById('muestrasCC').value) || 0;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/entregas`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        cantidad_entregada: cant,
+        muestras_control: muestras,
+        remito: document.getElementById('remitoEntrega').value || null,
+        es_entrega_final: document.getElementById('esEntregaFinal').checked,
+      }),
+    });
+    if (res.ok) location.reload();
+    else alert('Error al registrar entrega.');
+  }
+
+  // ── Editar datos ──────────────────────────────────────────────────────────
+  function abrirModalDatos() {
+    const val = id => { const t = document.getElementById(id)?.textContent.trim(); return t === '—' ? '' : t; };
+    document.getElementById('inOP').value         = val('dispOP');
+    document.getElementById('inLoteGranel').value = val('dispLoteGranel');
+    document.getElementById('inLotePT').value     = val('dispLotePT');
+    document.getElementById('inVenc').value       = val('dispVenc');
+    document.getElementById('alertDatos').style.display = 'none';
+    document.getElementById('modalDatos').classList.add('open');
+    document.getElementById('inOP').focus();
+  }
+
+  function fmtVenc(input) {
+    let v = input.value.replace(/[^\d]/g, '');
+    if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2,6);
+    input.value = v;
+  }
+
+  async function guardarDatos() {
+    const venc = document.getElementById('inVenc').value.trim();
+    if (venc && !/^\d{2}\/\d{4}$/.test(venc)) {
+      const al = document.getElementById('alertDatos');
+      al.textContent = 'Vencimiento debe ser MM/AAAA (ej: 06/2027).'; al.style.display = ''; return;
+    }
+    const btn = document.getElementById('btnGuardarDatos');
+    btn.disabled = true;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/datos`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        op:                document.getElementById('inOP').value.trim(),
+        lote_granel:       document.getElementById('inLoteGranel').value.trim(),
+        lote_pt:           document.getElementById('inLotePT').value.trim(),
+        fecha_vencimiento: venc,
+      }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('dispOP').textContent         = data.op               || '—';
+      document.getElementById('dispLoteGranel').textContent = data.lote_granel       || '—';
+      document.getElementById('dispLotePT').textContent     = data.lote_pt           || '—';
+      document.getElementById('dispVenc').textContent       = data.fecha_vencimiento || '—';
+      cerrarModal('modalDatos');
+      if (ESTADO === 'para_emitir') actualizarChecklist();
+    } else {
+      const e = await res.json();
+      const al = document.getElementById('alertDatos');
+      al.textContent = e.detail ?? 'Error al guardar.'; al.style.display = '';
+    }
+  }
+
+  // ── Eliminar orden ────────────────────────────────────────────────────────
+  async function eliminarOrden() {
+    if (!confirm('¿Seguro que querés eliminar esta orden? Esta acción no se puede deshacer.')) return;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}`, { method: 'DELETE' });
+    if (res.ok) {
+      window.location.href = '/ordenes';
+    } else {
+      const e = await res.json();
+      alert(e.detail || 'Error al eliminar la orden.');
+    }
+  }
+
+  // ── Render tabs ───────────────────────────────────────────────────────────
+  function renderHistorial(lista) {
+    const ul = document.getElementById('listHistorial');
+    if (!lista.length) { ul.innerHTML = '<li><span class="text-muted text-sm">Sin historial.</span></li>'; return; }
+    ul.innerHTML = lista.map(h => `
+      <li>
+        <div class="tl-dot"></div>
+        <div>
+          <div class="tl-title">
+            ${h.estado_anterior ? `<span class="badge badge-${esc(h.estado_anterior)}">${esc(LABELS[h.estado_anterior] ?? h.estado_anterior)}</span> → ` : ''}
+            <span class="badge badge-${esc(h.estado_nuevo)}">${esc(LABELS[h.estado_nuevo] ?? h.estado_nuevo)}</span>
+            ${h.subestado_nuevo ? `<span class="text-muted text-sm"> / ${esc(h.subestado_nuevo)}</span>` : ''}
+          </div>
+          ${h.observaciones ? `<div class="text-sm" style="margin-top:.2rem">${esc(h.observaciones)}</div>` : ''}
+          <div class="tl-meta">${fmtDate(h.fecha)} · ${esc(h.usuario_nombre)}</div>
+        </div>
+      </li>
+    `).join('');
+  }
+
+  function renderFaltantes(lista) {
+    const div = document.getElementById('listFaltantes');
+    if (!lista.length) {
+      div.innerHTML = '<span class="text-muted text-sm">Sin faltantes registrados.</span>';
+      return;
+    }
+    div.innerHTML = `
+      <table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Observación</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          ${lista.map(f => {
+            const obsDisplay = f.observacion
+              ? `<span style="font-size:.82rem">${esc(f.observacion)}</span>`
+              : `<span class="text-muted" style="font-size:.8rem;font-style:italic">Sin observación</span>`;
+            const btnObs = `<button class="btn btn-secondary btn-sm"
+              style="font-size:.72rem;padding:.2rem .5rem"
+              onclick='abrirModalObs(${f.id},${JSON.stringify(f.descripcion)},${JSON.stringify(f.observacion ?? "")})'>
+              ✎ Obs</button>`;
+            return `<tr>
+              <td class="font-mono text-sm">${esc(f.codigo || '—')}</td>
+              <td>${esc(f.descripcion)}</td>
+              <td>${obsDisplay}</td>
+              <td>${f.resuelto
+                ? '<span class="badge badge-terminada">Resuelto</span>'
+                : '<span class="badge badge-faltante">Pendiente</span>'}</td>
+              <td style="white-space:nowrap;display:flex;gap:.3rem">
+                ${btnObs}
+                ${!f.resuelto ? `<button class="btn btn-secondary btn-sm" onclick="resolverFaltante(${f.id},this)">Resolver</button>` : ''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function renderEntregas(lista) {
+    const div = document.getElementById('listEntregas');
+    if (!lista.length) { div.innerHTML = '<span class="text-muted text-sm">Sin entregas registradas.</span>'; return; }
+    const puedeEditar = puedeSupervisar;
+    div.innerHTML = `
+      <table>
+        <thead><tr><th>Fecha</th><th>Cantidad</th><th>Muestras CC</th><th>Remito</th><th>Tipo</th>${puedeEditar ? '<th></th>' : ''}</tr></thead>
+        <tbody>
+          ${lista.map(e => `
+            <tr>
+              <td class="text-sm">${fmtDate(e.fecha_entrega)}</td>
+              <td>${esc(String(e.cantidad_entregada))}</td>
+              <td>${e.muestras_control ? esc(String(e.muestras_control)) : '—'}</td>
+              <td class="font-mono text-sm">${esc(e.remito ?? '—')}</td>
+              <td>${e.es_entrega_final
+                ? '<span class="badge badge-entregada">Final</span>'
+                : '<span class="badge">Parcial</span>'}</td>
+              ${puedeEditar ? `<td><button class="btn btn-secondary btn-sm"
+                data-id="${e.id}"
+                data-cant="${e.cantidad_entregada}"
+                data-muestras="${e.muestras_control ?? ''}"
+                data-remito="${esc(e.remito ?? '')}"
+                onclick="abrirModalEditarEntrega(this)">
+                ✎ Editar</button></td>` : ''}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function renderEtapasHistorial(lista) {
+    const div = document.getElementById('listEtapas');
+    if (!lista || !lista.length) {
+      div.innerHTML = '<span class="text-muted text-sm">Sin etapas registradas.</span>';
+      return;
+    }
+    div.innerHTML = `
+      <table>
+        <thead><tr><th>Etapa</th><th>Inicio</th><th>Fin</th><th>Usuario</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${(() => {
+            const conteo = {};
+            lista.forEach(e => { conteo[e.nombre] = (conteo[e.nombre] || 0) + 1; });
+            return lista.map(e => {
+            const completada = !!e.fecha_fin;
+            const enCurso   = !!e.fecha_inicio && !e.fecha_fin;
+            const nombre    = conteo[e.nombre] > 1 ? `${esc(e.nombre)} ${e.iteracion}` : esc(e.nombre);
+            let badge;
+            if (completada)   badge = '<span class="badge badge-terminada">Completada</span>';
+            else if (enCurso) badge = '<span class="badge badge-en_proceso">En curso</span>';
+            else              badge = '<span class="badge">Pendiente</span>';
+            return `<tr>
+              <td>${nombre}</td>
+              <td class="text-sm">${e.fecha_inicio ? fmtDate(e.fecha_inicio) : '—'}</td>
+              <td class="text-sm">${e.fecha_fin    ? fmtDate(e.fecha_fin)    : '—'}</td>
+              <td class="text-sm">${esc(e.usuario ?? '—')}</td>
+              <td>${badge}</td>
+            </tr>`;
+          }).join('');
+          })()}
+        </tbody>
+      </table>`;
+  }
+
+  function abrirModalEditarEntrega(btn) {
+    document.getElementById('editEntregaId').value     = btn.dataset.id;
+    document.getElementById('editCantEntrega').value   = btn.dataset.cant;
+    document.getElementById('editMuestrasCC').value    = btn.dataset.muestras || '';
+    document.getElementById('editRemitoEntrega').value = btn.dataset.remito || '';
+    document.getElementById('modalEditarEntrega').classList.add('open');
+    setTimeout(() => document.getElementById('editCantEntrega').focus(), 50);
+  }
+
+  async function guardarEdicionEntrega() {
+    const id   = document.getElementById('editEntregaId').value;
+    const cant = parseInt(document.getElementById('editCantEntrega').value);
+    if (!cant || cant <= 0) { alert('Ingresá una cantidad válida.'); return; }
+    const btn = document.querySelector('#modalEditarEntrega .btn-primary');
+    btn.disabled = true;
+    const res = await fetch(`/api/entregas/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        cantidad_entregada: cant,
+        muestras_control:   parseInt(document.getElementById('editMuestrasCC').value) || null,
+        remito:             document.getElementById('editRemitoEntrega').value || null,
+      }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      location.reload();
+    } else {
+      btn.disabled = false;
+      alert('Error al guardar.');
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function abrirModalInicioProduccion() { document.getElementById('modalInicioProduccion').classList.add('open'); }
+  function abrirModalTerminar()       { document.getElementById('modalTerminar').classList.add('open'); }
+  // modo: 'normal' | 'parcial' | 'final'
+  function abrirModalEntrega(modo = 'normal') {
+    const entregas  = _ordenData.entregas ?? [];
+    const entregado = entregas.reduce((s, e) => s + (e.cantidad_entregada ?? 0), 0);
+    const muestrasAnt = entregas.reduce((s, e) => s + (e.muestras_control ?? 0), 0);
+    const totalProd = entregado + muestrasAnt;
+
+    document.getElementById('resYaEntregado').textContent  = entregado   ? Math.round(entregado)   : '—';
+    document.getElementById('resMuestrasAnt').textContent  = muestrasAnt ? Math.round(muestrasAnt) : '—';
+    document.getElementById('resTotalProd').textContent    = totalProd   ? Math.round(totalProd)   : '—';
+    document.getElementById('cantEntrega').value   = '';
+    document.getElementById('muestrasCC').value    = '';
+    document.getElementById('remitoEntrega').value = '';
+
+    const rowFinal = document.getElementById('rowEntregaFinal');
+    const chkFinal = document.getElementById('esEntregaFinal');
+    const titulo   = document.getElementById('tituloModalEntrega');
+
+    if (modo === 'parcial') {
+      chkFinal.checked = false;
+      rowFinal.style.display = 'none';
+      titulo.textContent = 'Registrar entrega parcial';
+    } else if (modo === 'final') {
+      chkFinal.checked = true;
+      rowFinal.style.display = 'none';
+      titulo.textContent = 'Registrar entrega final';
+    } else {
+      chkFinal.checked = false;
+      rowFinal.style.display = '';
+      titulo.textContent = 'Registrar entrega';
+    }
+
+    document.getElementById('modalEntrega').classList.add('open');
+    setTimeout(() => document.getElementById('cantEntrega').focus(), 50);
+  }
+  function cerrarModal(id)            { document.getElementById(id).classList.remove('open'); }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  // ── Etapas de proceso ─────────────────────────────────────────────────────
+  async function cargarEtapasProceso() {
+    const body = document.getElementById('etapasBody');
+    if (!body) return;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/etapas-proceso`);
+    const etapas = await res.json();
+    _etapas = Array.isArray(etapas) ? etapas : [];
+
+    const btnFinalizar      = document.getElementById('btnFinalizarProduccion');
+    const btnEntregaParcial = document.getElementById('btnEntregaParcial');
+    const puedeEditar = puedeOperar;
+
+    if (!Array.isArray(etapas) || !etapas.length) {
+      body.innerHTML = '<p class="text-muted text-sm" style="padding:1rem">Sin etapas definidas. Verificá que el producto tenga una forma farmacéutica con etapas asignadas.</p>';
+      if (btnFinalizar) btnFinalizar.style.display = '';  // sin etapas → siempre disponible
+      if (btnEntregaParcial) btnEntregaParcial.style.display = 'none';
+      return;
+    }
+
+    // Mostrar "Registrar entrega parcial" cuando al menos un Estuchado está completado
+    if (btnEntregaParcial) {
+      const estuchadoCompletado = etapas.some(e =>
+        e.nombre.toLowerCase().includes('estuchado') && !!e.fecha_fin && e.es_parcial
+      );
+      btnEntregaParcial.style.display = (puedeEditar && estuchadoCompletado) ? '' : 'none';
+    }
+
+    const todasCompletadas = etapas.every(e => !!e.fecha_fin);
+    if (btnFinalizar) btnFinalizar.style.display = todasCompletadas ? '' : 'none';
+
+    body.innerHTML = etapas.map(e => {
+      const completada = !!e.fecha_fin;
+      const enCurso   = !!e.fecha_inicio && !e.fecha_fin;
+      const pendiente = !e.fecha_inicio;
+
+      // Nombre con número de iteración si hay más de una para esta etapa
+      const mostrarNum = e.total_iteraciones > 1;
+      const nombreDisplay = mostrarNum ? `${esc(e.nombre)} ${e.iteracion}` : esc(e.nombre);
+
+      const circulo = completada
+        ? `background:#dcfce7;color:#15803d`
+        : enCurso ? `background:#dbeafe;color:#1e40af`
+        : `background:var(--gray-100);color:var(--gray-400)`;
+
+      const icono = completada ? '✓' : enCurso ? '▶' : e.orden;
+
+      let meta = '';
+      if (completada)   meta = `Inicio: ${fmtDate(e.fecha_inicio)} · Fin: ${fmtDate(e.fecha_fin)}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
+      else if (enCurso) meta = `Iniciada el ${fmtDate(e.fecha_inicio)}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
+
+      let accion = '';
+      const esEstuchado = e.nombre.toLowerCase().includes('estuchado');
+      let btnRevertir = '';
+      if (puedeEditar) {
+        if (completada && esEstuchado) {
+          const nomDisplay = mostrarNum ? `${esc(e.nombre)} ${e.iteracion}` : esc(e.nombre);
+          btnRevertir = `<button class="btn btn-sm" title="Cambiar tipo"
+            style="color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;font-size:.75rem;padding:.15rem .5rem"
+            data-etapaid="${e.id}" data-nombre="${esc(e.nombre)}" data-nom-display="${nomDisplay}"
+            onclick="cambiarTipoEstuchado(this)">↩ Cambiar tipo</button>`;
+        } else {
+          btnRevertir = `<button class="btn btn-sm" title="Revertir"
+            style="color:var(--gray-400);padding:.15rem .45rem;min-width:0;font-size:.85rem"
+            onclick="revertirEtapa(${e.id}, '${completada ? 'fin' : 'inicio'}')">↩</button>`;
+        }
+      }
+
+      if (completada) {
+        let badgeLabel, badgeStyle;
+        if (esEstuchado && !e.es_parcial) {
+          badgeLabel = 'Final';
+          badgeStyle = 'color:#1e40af;background:#dbeafe;border:1px solid #93c5fd';
+        } else {
+          badgeLabel = 'Completada';
+          badgeStyle = 'color:#15803d;background:#dcfce7';
+        }
+        accion = `<div style="display:flex;align-items:center;gap:.4rem">
+          <span style="font-size:.75rem;font-weight:700;${badgeStyle};padding:.2rem .6rem;border-radius:99px">${badgeLabel}</span>
+          ${btnRevertir}
+        </div>`;
+      } else if (enCurso) {
+        accion = `<div style="display:flex;align-items:center;gap:.5rem">
+          <span style="font-size:.75rem;font-weight:700;color:#1e40af;background:#dbeafe;padding:.2rem .7rem;border-radius:99px;white-space:nowrap">● En curso</span>
+          ${puedeEditar ? `<button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-weight:700"
+                  data-nombre="${esc(e.nombre)}"
+                  onclick="completarEtapa(${e.id}, this)">✓ Finalizar</button>` : ''}
+          ${btnRevertir}
+        </div>`;
+      } else {
+        accion = puedeEditar
+          ? `<button class="btn btn-primary btn-sm" onclick="iniciarEtapa(${e.id}, this)">▶ Iniciar</button>`
+          : '';
+      }
+
+      return `<div style="display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;
+                          border-bottom:1px solid var(--gray-100);opacity:${completada ? '.65' : '1'}">
+        <span style="width:1.8rem;height:1.8rem;border-radius:50%;${circulo};
+              font-size:.78rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          ${icono}
+        </span>
+        <div style="flex:1">
+          <div style="font-size:.875rem;font-weight:${pendiente ? '400' : '600'};
+                      color:${pendiente ? 'var(--gray-500)' : 'var(--gray-900)'};
+                      text-decoration:${completada && !e.es_parcial ? 'line-through' : 'none'}">
+            ${nombreDisplay}
+          </div>
+          ${meta ? `<div style="font-size:.75rem;color:var(--gray-400);margin-top:.1rem">${meta}</div>` : ''}
+        </div>
+        ${accion}
+      </div>`;
+    }).join('');
+  }
+
+  let _etapas               = [];
+  let _etapaIdPendiente     = null;
+  let _btnEtapaPendiente    = null;
+  let _etapaNombrePendiente = '';
+
+  async function iniciarEtapa(etapaOrdenId, btn) {
+    const otraEnCurso = _etapas.some(e => e.id !== etapaOrdenId && !!e.fecha_inicio && !e.fecha_fin);
+    if (otraEnCurso) {
+      if (!confirm('Hay una etapa en curso. ¿Querés iniciar esta etapa igualmente?')) return;
+    }
+    btn.disabled = true; btn.textContent = '…';
+    const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/iniciar`, { method: 'PATCH' });
+    if (res.ok) await cargarEtapasProceso();
+    else { btn.disabled = false; btn.textContent = '▶ Iniciar'; alert('Error.'); }
+  }
+
+  async function cambiarTipoEstuchado(btn) {
+    const id         = btn.dataset.etapaid;
+    const nombre     = btn.dataset.nombre;
+    const nomDisplay = btn.dataset.nomDisplay;
+    if (!confirm(`¿Cambiar el tipo de "${nomDisplay}"? La etapa volverá a En curso para que puedas seleccionar el tipo correcto.`)) return;
+    btn.disabled = true;
+    const res = await fetch(`/api/etapas-proceso/${id}/revertir`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tipo: 'fin'}),
+    });
+    if (!res.ok) { btn.disabled = false; alert('Error al revertir.'); return; }
+    await cargarEtapasProceso();
+    // Buscar la etapa ahora en_curso y abrir el modal
+    const etapa = _etapas.find(e => e.id === parseInt(id));
+    if (etapa) {
+      _etapaIdPendiente     = etapa.id;
+      _btnEtapaPendiente    = document.createElement('button'); // dummy
+      const mostrarNum = etapa.total_iteraciones > 1;
+      _etapaNombrePendiente = mostrarNum ? `${nombre} ${etapa.iteracion}` : nombre;
+      document.getElementById('tituloModalEstuchado').textContent = `Finalizar ${_etapaNombrePendiente}`;
+      document.getElementById('modalEstuchadoParcial').classList.add('open');
+    }
+  }
+
+  async function revertirEtapa(etapaOrdenId, tipo) {
+    const msg = tipo === 'inicio'
+      ? '¿Revertir el inicio de esta etapa? Volverá a Pendiente.'
+      : '¿Revertir la finalización? Volverá a En curso.';
+    if (!confirm(msg)) return;
+    const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/revertir`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tipo}),
+    });
+    if (res.ok) await cargarEtapasProceso();
+    else alert('Error al revertir.');
+  }
+
+  function completarEtapa(etapaOrdenId, btn) {
+    const nombre = btn.dataset.nombre || '';
+    if (nombre.toLowerCase().includes('estuchado')) {
+      _etapaIdPendiente     = etapaOrdenId;
+      _btnEtapaPendiente    = btn;
+      const etapa = _etapas.find(e => e.id === etapaOrdenId);
+      const mostrarNum = etapa && etapa.total_iteraciones > 1;
+      _etapaNombrePendiente = mostrarNum ? `${nombre} ${etapa.iteracion}` : nombre;
+      document.getElementById('tituloModalEstuchado').textContent = `Finalizar ${_etapaNombrePendiente}`;
+      document.getElementById('modalEstuchadoParcial').classList.add('open');
+      return;
+    }
+    _ejecutarCompletarEtapa(etapaOrdenId, btn, false);
+  }
+
+  async function confirmarCompletarEtapa(parcial) {
+    cerrarModal('modalEstuchadoParcial');
+    const id  = _etapaIdPendiente;
+    const btn = _btnEtapaPendiente;
+    _etapaIdPendiente  = null;
+    _btnEtapaPendiente = null;
+    await _ejecutarCompletarEtapa(id, btn, parcial);
+    if (parcial) {
+      // Estuchado parcial → abrir modal de entrega parcial
+      abrirModalEntrega('parcial');
+    } else {
+      // Estuchado final → abrir modal de entrega final
+      abrirModalEntrega('final');
+    }
+  }
+
+  async function _ejecutarCompletarEtapa(etapaOrdenId, btn, parcial) {
+    btn.disabled = true; btn.textContent = '…';
+    const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/completar`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({parcial}),
+    });
+    if (res.ok) await cargarEtapasProceso();
+    else { btn.disabled = false; btn.textContent = '✓ Finalizar'; alert('Error.'); }
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); })
+  );
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# Base de datos local
+*.db
+*.sqlite3
+
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Variables de entorno
+.env
+.env.local
+
+# Backups locales
+backups/
+
+# IDE
+.vscode/
+.idea/

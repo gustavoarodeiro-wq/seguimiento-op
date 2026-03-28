@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Seguimiento — Producción</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    body { background: #f1f5f9; }
+
+    .pub-header {
+      background: #1e3a5f;
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .pub-header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; }
+    .pub-header .sub { font-size: .8rem; opacity: .7; margin-top:.2rem; }
+
+    .pub-body { max-width: 1400px; margin: 1.5rem auto; padding: 0 1.5rem; }
+
+    .filtros {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      align-items: center;
+      background: #fff;
+      padding: .85rem 1.25rem;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    .filtros input { flex: 1; min-width: 220px; }
+    .estado-tabs { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .tab-btn {
+      padding: .3rem .85rem;
+      border-radius: 99px;
+      border: 1px solid var(--gray-200);
+      background: var(--gray-50);
+      font-size: .8rem;
+      cursor: pointer;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .tab-btn.active { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+    .contador-tab {
+      display: inline-block;
+      background: rgba(255,255,255,.3);
+      border-radius: 99px;
+      font-size: .7rem;
+      padding: 0 .4rem;
+      margin-left: .25rem;
+      vertical-align: middle;
+    }
+    .tab-btn:not(.active) .contador-tab {
+      background: var(--gray-200);
+      color: var(--gray-600);
+    }
+    .updated { font-size: .78rem; color: var(--gray-400); white-space: nowrap; }
+    .refresh-bar {
+      height: 3px;
+      background: #1e3a5f;
+      width: 0%;
+      transition: width 1s linear;
+      border-radius: 0;
+    }
+
+    /* Badges de estado */
+    .badge-revisar     { background:#fef3c7; color:#92400e; }
+    .badge-faltante    { background:#ffe4e6; color:#9f1239; }
+    .badge-para_emitir { background:#ede9fe; color:#5b21b6; }
+    .badge-emitido     { background:#dbeafe; color:#1e40af; }
+    .badge-en_proceso  { background:#dcfce7; color:#14532d; }
+    .badge-terminada   { background:#ccfbf1; color:#134e4a; }
+    .badge-entregada   { background:#e0f2fe; color:#0369a1; }
+    .badge-cancelada   { background:#f3f4f6; color:#374151; }
+
+    .row-clickable { cursor: pointer; }
+    .row-clickable:hover td { background: #f0f7ff; }
+
+    /* Modal detalle */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.5); z-index: 300;
+      align-items: center; justify-content: center; padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-pub {
+      background: #fff; border-radius: 14px; width: 100%;
+      max-width: 680px; max-height: 90vh; display: flex;
+      flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,.2);
+    }
+    .modal-pub-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--gray-200);
+      display: flex; align-items: flex-start; gap: .75rem;
+    }
+    .modal-pub-header h2 { margin: 0; font-size: 1.05rem; flex: 1; }
+    .modal-pub-body { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; }
+    .modal-pub-footer {
+      padding: .85rem 1.5rem;
+      border-top: 1px solid var(--gray-100);
+      display: flex; justify-content: flex-end;
+    }
+
+    .dato-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem 1.5rem; margin-bottom: 1.25rem; }
+    .dato-item { }
+    .dato-label { font-size: .72rem; font-weight: 700; color: var(--gray-400);
+                  text-transform: uppercase; letter-spacing: .05em; margin-bottom: .15rem; }
+    .dato-val { font-size: .9rem; font-weight: 500; color: var(--gray-800); }
+
+    .hist-title { font-size: .75rem; font-weight: 700; color: var(--gray-400);
+                  text-transform: uppercase; letter-spacing: .05em; margin-bottom: .65rem; }
+    .hist-item { display: flex; gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--gray-100); }
+    .hist-item:last-child { border-bottom: none; }
+    .hist-dot { width: 8px; height: 8px; border-radius: 50%; background: #1e3a5f;
+                flex-shrink: 0; margin-top: .35rem; }
+    .hist-fecha { font-size: .78rem; color: var(--gray-400); white-space: nowrap; }
+    .hist-estados { font-size: .85rem; }
+    .hist-obs { font-size: .78rem; color: var(--gray-500); font-style: italic; margin-top: .15rem; }
+  </style>
+</head>
+<body>
+
+<div class="refresh-bar" id="refreshBar"></div>
+
+<div class="pub-header">
+  <div>
+    <h1>Panel de Seguimiento de Producción</h1>
+    <div class="sub">Solo lectura · Actualización automática cada 60 segundos</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:1rem">
+    <span class="updated" id="updated" style="color:rgba(255,255,255,.6)"></span>
+    <a href="/login" style="color:rgba(255,255,255,.8);font-size:.82rem;text-decoration:none;
+       border:1px solid rgba(255,255,255,.3);padding:.3rem .8rem;border-radius:6px;">
+      Ingresar →
+    </a>
+  </div>
+</div>
+
+<div class="pub-body">
+
+  <div class="filtros">
+    <input type="text" id="filtro" placeholder="Buscar por OP, producto, lote…" oninput="filtrar()">
+    <div class="estado-tabs" id="tabs"></div>
+    <span class="text-muted text-sm" id="totalLabel"></span>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>OP</th>
+            <th>Producto</th>
+            <th>Cantidad</th>
+            <th>Lote PT</th>
+            <th>Vencimiento</th>
+            <th>Estado</th>
+            <th>Subestado</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--gray-400)">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal detalle orden -->
+<div class="modal-overlay" id="modalDetalle">
+  <div class="modal-pub">
+    <div class="modal-pub-header">
+      <div style="flex:1">
+        <div style="font-size:.72rem;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">Orden de Producción</div>
+        <h2 id="mOP">—</h2>
+        <div id="mProducto" style="font-size:.9rem;color:var(--gray-500);margin-top:.15rem"></div>
+      </div>
+      <span id="mEstadoBadge" class="badge" style="align-self:flex-start;white-space:nowrap"></span>
+      <button onclick="cerrarDetalle()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray-400);line-height:1;margin-left:.5rem">✕</button>
+    </div>
+    <div class="modal-pub-body" id="mBody">
+      <span class="text-muted text-sm">Cargando…</span>
+    </div>
+    <div class="modal-pub-footer">
+      <button class="btn btn-secondary" onclick="cerrarDetalle()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const ESTADOS_ACTIVOS = ['todos','revisar','faltante','para_emitir','emitido','en_proceso','terminada'];
+  const ESTADOS_TODOS   = [...ESTADOS_ACTIVOS, 'entregada', 'cancelada'];
+
+  const LABELS = {
+    todos:'Todos', revisar:'Revisar', faltante:'Faltante',
+    para_emitir:'Para Emitir', emitido:'Emitido', en_proceso:'En Proceso',
+    terminada:'Terminada', entregada:'Entregada', cancelada:'Cancelada'
+  };
+  const BADGE_CLASS = {
+    revisar:'badge-revisar', faltante:'badge-faltante', para_emitir:'badge-para_emitir',
+    emitido:'badge-emitido', en_proceso:'badge-en_proceso', terminada:'badge-terminada',
+    entregada:'badge-entregada', cancelada:'badge-cancelada',
+  };
+
+  let allOrdenes   = [];
+  let estadoActivo = 'todos';
+  let conteos      = {};
+
+  // ── Tabs ──────────────────────────────────────────────────────────────────
+  const tabsEl = document.getElementById('tabs');
+
+  function buildTabs() {
+    tabsEl.innerHTML = '';
+    ESTADOS_ACTIVOS.forEach(e => {
+      const btn = document.createElement('button');
+      btn.className = 'tab-btn' + (e === estadoActivo ? ' active' : '');
+      btn.dataset.estado = e;
+      const n = e === 'todos' ? allOrdenes.filter(o => ESTADOS_ACTIVOS.includes(o.estado) || o.estado === 'todos').length : (conteos[e] || 0);
+      const badge = e !== 'todos' && n > 0 ? `<span class="contador-tab">${n}</span>` : '';
+      btn.innerHTML = LABELS[e] + badge;
+      btn.onclick = () => {
+        estadoActivo = e;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filtrar();
+      };
+      tabsEl.appendChild(btn);
+    });
+  }
+
+  // ── Carga de datos ────────────────────────────────────────────────────────
+  async function cargar() {
+    try {
+      const res = await fetch('/api/seguimiento');
+      allOrdenes = await res.json();
+      // Calcular conteos por estado (solo activas)
+      conteos = {};
+      allOrdenes.forEach(o => { conteos[o.estado] = (conteos[o.estado] || 0) + 1; });
+      // Filtrar entregadas/canceladas de la vista por defecto
+      allOrdenes = allOrdenes.filter(o => o.estado !== 'cancelada');
+      document.getElementById('updated').textContent =
+        'Actualiz.: ' + new Date().toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'});
+      buildTabs();
+      filtrar();
+      animarRefreshBar();
+    } catch(err) { console.error(err); }
+  }
+
+  function filtrar() {
+    const q = document.getElementById('filtro').value.toLowerCase();
+    const filtered = allOrdenes.filter(o => {
+      // Si el tab activo no incluye entregadas, ocultarlas
+      const esActiva = ESTADOS_ACTIVOS.includes(o.estado);
+      const matchEstado = estadoActivo === 'todos' ? esActiva : o.estado === estadoActivo;
+      const matchQ = !q ||
+        (o.op || '').toLowerCase().includes(q) ||
+        o.descripcion_producto.toLowerCase().includes(q) ||
+        o.codigo_producto.toLowerCase().includes(q) ||
+        (o.lote_pt || '').toLowerCase().includes(q);
+      return matchEstado && matchQ;
+    });
+
+    document.getElementById('totalLabel').textContent = `${filtered.length} orden(es)`;
+    const tbody = document.getElementById('tbody');
+
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2.5rem;color:var(--gray-400)">Sin resultados.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(o => `
+      <tr class="row-clickable" onclick="abrirDetalle(${o.id})">
+        <td class="font-mono" style="font-weight:600">${esc(o.op ?? '—')}</td>
+        <td>
+          <div style="font-weight:500">${esc(o.descripcion_producto)}</div>
+          <div style="font-size:.78rem;color:var(--gray-400)">${esc(o.codigo_producto)}</div>
+        </td>
+        <td style="white-space:nowrap">${o.cantidad ? o.cantidad.toLocaleString('es-AR') : '—'} ${esc(o.unidad ?? '')}</td>
+        <td class="font-mono text-sm">${esc(o.lote_pt ?? '—')}</td>
+        <td class="text-sm text-muted">${esc(o.fecha_vencimiento ?? '—')}</td>
+        <td><span class="badge ${BADGE_CLASS[o.estado] ?? ''}">${esc(LABELS[o.estado] ?? o.estado)}</span></td>
+        <td class="text-sm text-muted">${esc(o.subestado ?? '—')}</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Modal detalle ──────────────────────────────────────────────────────────
+  async function abrirDetalle(id) {
+    document.getElementById('mOP').textContent = 'Cargando…';
+    document.getElementById('mProducto').textContent = '';
+    document.getElementById('mEstadoBadge').textContent = '';
+    document.getElementById('mEstadoBadge').className = 'badge';
+    document.getElementById('mBody').innerHTML = '<span class="text-muted text-sm">Cargando…</span>';
+    document.getElementById('modalDetalle').classList.add('open');
+
+    const res = await fetch(`/api/seguimiento/${id}`);
+    if (!res.ok) {
+      document.getElementById('mBody').innerHTML = '<p class="text-muted text-sm">Error al cargar la orden.</p>';
+      return;
+    }
+    const o = await res.json();
+
+    document.getElementById('mOP').textContent = o.op ? `OP ${o.op}` : `Orden #${o.id}`;
+    document.getElementById('mProducto').textContent = o.descripcion_producto;
+    const badge = document.getElementById('mEstadoBadge');
+    badge.className = `badge ${BADGE_CLASS[o.estado] ?? ''}`;
+    badge.textContent = LABELS[o.estado] ?? o.estado;
+
+    const datoHtml = (label, val) =>
+      `<div class="dato-item"><div class="dato-label">${label}</div><div class="dato-val">${val || '—'}</div></div>`;
+
+    let histHtml = '';
+    if (o.historial && o.historial.length) {
+      histHtml = `<div class="hist-title">Historial de estados</div>` +
+        o.historial.map(h => {
+          const fecha = h.fecha ? new Date(h.fecha).toLocaleString('es-AR',
+            {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+          const estados = h.estado_anterior
+            ? `<span class="badge ${BADGE_CLASS[h.estado_anterior] ?? ''}" style="font-size:.72rem">${LABELS[h.estado_anterior] ?? h.estado_anterior}</span>`
+              + ` → <span class="badge ${BADGE_CLASS[h.estado_nuevo] ?? ''}" style="font-size:.72rem">${LABELS[h.estado_nuevo] ?? h.estado_nuevo}</span>`
+            : `<span class="badge ${BADGE_CLASS[h.estado_nuevo] ?? ''}" style="font-size:.72rem">${LABELS[h.estado_nuevo] ?? h.estado_nuevo}</span>`;
+          const obs = h.observaciones ? `<div class="hist-obs">${esc(h.observaciones)}</div>` : '';
+          return `<div class="hist-item">
+            <div class="hist-dot"></div>
+            <div style="flex:1">
+              <div class="hist-estados">${estados}</div>
+              ${obs}
+            </div>
+            <div class="hist-fecha">${fecha}</div>
+          </div>`;
+        }).join('');
+    } else {
+      histHtml = '<p class="text-muted text-sm">Sin historial registrado.</p>';
+    }
+
+    document.getElementById('mBody').innerHTML = `
+      <div class="dato-grid">
+        ${datoHtml('Código producto', esc(o.codigo_producto))}
+        ${datoHtml('Cantidad', o.cantidad ? o.cantidad.toLocaleString('es-AR') + ' ' + (o.unidad || '') : null)}
+        ${datoHtml('Lote PT', esc(o.lote_pt))}
+        ${datoHtml('Lote granel', esc(o.lote_granel))}
+        ${datoHtml('Vencimiento', esc(o.fecha_vencimiento))}
+        ${datoHtml('Subestado', esc(o.subestado))}
+      </div>
+      ${histHtml}
+    `;
+  }
+
+  function cerrarDetalle() {
+    document.getElementById('modalDetalle').classList.remove('open');
+  }
+  document.getElementById('modalDetalle').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarDetalle();
+  });
+
+  // ── Refresh bar ──────────────────────────────────────────────────────────
+  function animarRefreshBar() {
+    const bar = document.getElementById('refreshBar');
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    setTimeout(() => {
+      bar.style.transition = 'width 60s linear';
+      bar.style.width = '100%';
+    }, 50);
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Inicializar ──────────────────────────────────────────────────────────
+  cargar();
+  setInterval(cargar, 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Materiales de Empaque — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  {% include "partials/maestro_styles.html" %}
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Materiales de Empaque</h1>
+        <p class="page-subtitle">Alta y mantenimiento de materiales de empaque</p>
+      </div>
+      {% if user.rol == 'admin' %}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <a href="/api/materiales-empaque/plantilla" class="btn btn-secondary" download>⬇ Plantilla Excel</a>
+        <button class="btn btn-secondary" onclick="abrirImport('/api/materiales-empaque/importar')">↑ Importar Excel</button>
+        <button class="btn btn-primary" onclick="abrirModal()">+ Nuevo material</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="toolbar">
+          <input type="text" id="filtro" placeholder="Buscar código, descripción o clasificación…" oninput="filtrar()">
+          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer">
+            <input type="checkbox" id="chkInactivos" onchange="filtrar()"> Mostrar inactivos
+          </label>
+        </div>
+        <span class="text-muted text-sm" id="countLabel"></span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Código</th><th>Descripción</th><th>Clasificación</th><th>Unidad</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">Nuevo Material de Empaque</h3>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label>Código *</label>
+      <input type="text" id="fCodigo" placeholder="ej: ME-001" style="text-transform:uppercase">
+    </div>
+    <div class="form-group">
+      <label>Descripción *</label>
+      <input type="text" id="fDesc" placeholder="Nombre del material de empaque">
+    </div>
+    <div class="form-group">
+      <label>Clasificación</label>
+      <input type="text" id="fClasificacion" placeholder="ej: Estuche, Prospecto, Etiqueta, Frasco…">
+    </div>
+    <div class="form-group">
+      <label>Unidad *</label>
+      <select id="fUnidad">
+        <option value="UN">UN — Unidades</option>
+        <option value="KG">Kg — Kilogramos</option>
+      </select>
+    </div>
+    <div id="alertModal" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+  const API = '/api/materiales-empaque';
+  const canEdit = {{ 'true' if user.rol == 'admin' else 'false' }};
+  const isAdmin = {{ 'true' if user.rol == 'admin' else 'false' }};
+  let allItems = [];
+
+  document.addEventListener('DOMContentLoaded', cargar);
+
+  async function cargar() {
+    const res = await fetch(API);
+    allItems = await res.json();
+    filtrar();
+  }
+
+  function filtrar() {
+    const q = document.getElementById('filtro').value.toLowerCase();
+    const verInactivos = document.getElementById('chkInactivos').checked;
+    const filtered = allItems.filter(i =>
+      (verInactivos || i.activo) &&
+      (i.codigo.toLowerCase().includes(q) ||
+       i.descripcion.toLowerCase().includes(q) ||
+       (i.clasificacion || '').toLowerCase().includes(q))
+    );
+    document.getElementById('countLabel').textContent = `${filtered.length} item(s)`;
+    const tbody = document.getElementById('tbody');
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(i => `
+      <tr class="${i.activo ? '' : 'row-inactivo'}">
+        <td class="font-mono">${esc(i.codigo)}</td>
+        <td>${esc(i.descripcion)}</td>
+        <td class="text-muted">${esc(i.clasificacion ?? '—')}</td>
+        <td>${fmtUnidad(i.unidad)}</td>
+        <td><span class="badge badge-${i.activo ? 'activo' : 'inactivo'}">${i.activo ? 'Activo' : 'Inactivo'}</span></td>
+        <td style="display:flex;gap:.4rem">
+          ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick='editar(${JSON.stringify(i)})'>Editar</button>` : ''}
+          ${isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="toggle(${i.id},this)">${i.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function abrirModal(item = null) {
+    document.getElementById('modalTitle').textContent = item ? 'Editar Material' : 'Nuevo Material de Empaque';
+    document.getElementById('editId').value = item?.id ?? '';
+    document.getElementById('fCodigo').value = item?.codigo ?? '';
+    document.getElementById('fCodigo').disabled = !!item;
+    document.getElementById('fDesc').value = item?.descripcion ?? '';
+    document.getElementById('fClasificacion').value = item?.clasificacion ?? '';
+    document.getElementById('fUnidad').value = item?.unidad ?? 'UN';
+    document.getElementById('alertModal').style.display = 'none';
+    document.getElementById('modal').classList.add('open');
+    document.getElementById(item ? 'fDesc' : 'fCodigo').focus();
+  }
+
+  function editar(item) { abrirModal(item); }
+  function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+  async function guardar() {
+    const id = document.getElementById('editId').value;
+    const body = {
+      codigo:        document.getElementById('fCodigo').value.trim().toUpperCase(),
+      descripcion:   document.getElementById('fDesc').value.trim(),
+      clasificacion: document.getElementById('fClasificacion').value.trim(),
+      unidad:        document.getElementById('fUnidad').value,
+    };
+    if (!body.descripcion) { showAlert('La descripción es obligatoria.'); return; }
+    if (!id && !body.codigo) { showAlert('El código es obligatorio.'); return; }
+
+    const btn = document.getElementById('btnGuardar');
+    btn.disabled = true;
+    const res = await fetch(id ? `${API}/${id}` : API, {
+      method: id ? 'PUT' : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    btn.disabled = false;
+    if (res.ok) { cerrarModal(); await cargar(); }
+    else { const err = await res.json(); showAlert(err.detail ?? 'Error al guardar.'); }
+  }
+
+  async function toggle(id, btn) {
+    btn.disabled = true;
+    const res = await fetch(`${API}/${id}/toggle`, { method: 'PATCH' });
+    btn.disabled = false;
+    if (res.ok) await cargar();
+    else alert('Error al cambiar estado.');
+  }
+
+  function showAlert(msg) { const el = document.getElementById('alertModal'); el.textContent = msg; el.style.display = ''; }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  document.getElementById('modal').addEventListener('click', e => { if (e.target.id === 'modal') cerrarModal(); });
+</script>
+{% include "partials/import_modal.html" %}
+</body>
+</html>

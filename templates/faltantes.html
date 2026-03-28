@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faltantes — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .filtros-grid {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: .75rem;
+      align-items: flex-end;
+    }
+    @media (max-width: 700px) {
+      .filtros-grid { grid-template-columns: 1fr; }
+    }
+    .badge-MP { background:#dbeafe; color:#1e40af; }
+    .badge-ME { background:#fef3c7; color:#92400e; }
+    .obs-cell { font-size:.8rem; color:var(--gray-500); font-style:italic; max-width:280px; }
+    .orden-link { font-size:.8rem; color:var(--gray-500); white-space:nowrap; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Faltantes</h1>
+        <p class="page-subtitle">Ítems pendientes de resolución en todas las órdenes</p>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-body" style="padding:.85rem 1.25rem">
+        <div class="filtros-grid">
+          <div class="form-group" style="margin:0">
+            <label>Búsqueda</label>
+            <input type="text" id="inputBuscar" placeholder="Código, descripción, OP, producto…">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>Tipo</label>
+            <select id="selectTipo">
+              <option value="">Todos</option>
+              <option value="MP">Materia Prima</option>
+              <option value="ME">Mat. Empaque</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.4rem;padding-bottom:1px">
+            <button class="btn btn-primary" onclick="buscar()">Buscar</button>
+            <button class="btn btn-secondary" onclick="limpiar()">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Faltantes activos</span>
+        <span class="text-muted text-sm" id="totalLabel"></span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Código</th>
+              <th>Descripción</th>
+              <th>Observación</th>
+              <th>Fecha</th>
+              <th>OP</th>
+              <th>Producto</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyFaltantes">
+            <tr><td colspan="8" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', buscar);
+
+  document.getElementById('inputBuscar').addEventListener('keydown', e => {
+    if (e.key === 'Enter') buscar();
+  });
+
+  async function buscar() {
+    const q    = document.getElementById('inputBuscar').value.trim();
+    const tipo = document.getElementById('selectTipo').value;
+
+    const params = new URLSearchParams();
+    if (q)    params.set('q', q);
+    if (tipo) params.set('tipo', tipo);
+
+    document.getElementById('tbodyFaltantes').innerHTML =
+      '<tr><td colspan="8" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>';
+
+    const res  = await fetch(`/api/faltantes?${params}`);
+    const data = await res.json();
+
+    document.getElementById('totalLabel').textContent = `${data.total} faltante(s)`;
+    renderTabla(data.faltantes);
+  }
+
+  function limpiar() {
+    document.getElementById('inputBuscar').value = '';
+    document.getElementById('selectTipo').value  = '';
+    buscar();
+  }
+
+  const TIPO_LABELS = { MP: 'Mat. Prima', ME: 'Mat. Empaque' };
+
+  function renderTabla(lista) {
+    const tbody = document.getElementById('tbodyFaltantes');
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin faltantes activos.</td></tr>';
+      return;
+    }
+
+    // Agrupar por código para destacar repetidos
+    const conteo = {};
+    lista.forEach(f => { conteo[f.codigo] = (conteo[f.codigo] || 0) + 1; });
+
+    tbody.innerHTML = lista.map(f => {
+      const repetido = conteo[f.codigo] > 1;
+      return `
+      <tr>
+        <td><span class="badge badge-${esc(f.tipo)}">${esc(TIPO_LABELS[f.tipo] ?? f.tipo)}</span></td>
+        <td class="font-mono" style="font-size:.85rem;font-weight:600">
+          ${esc(f.codigo)}
+          ${repetido ? `<span title="Este ítem está faltante en ${conteo[f.codigo]} órdenes"
+            style="margin-left:.35rem;background:#fee2e2;color:#991b1b;font-size:.7rem;
+                   border-radius:99px;padding:.1rem .45rem;font-weight:700">×${conteo[f.codigo]}</span>` : ''}
+        </td>
+        <td>${esc(f.descripcion)}</td>
+        <td class="obs-cell">${f.observacion ? esc(f.observacion) : '<span style="color:var(--gray-300)">—</span>'}</td>
+        <td class="text-sm text-muted" style="white-space:nowrap">${fmtFecha(f.fecha_registro)}</td>
+        <td class="font-mono" style="font-size:.85rem">${esc(f.op ?? '—')}</td>
+        <td style="font-size:.875rem">${esc(f.descripcion_producto ?? '—')}</td>
+        <td><a href="/ordenes/${f.orden_id}" class="btn btn-secondary btn-sm">Ver orden</a></td>
+      </tr>
+    `}).join('');
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtFecha(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+  }
+</script>
+</body>
+</html>

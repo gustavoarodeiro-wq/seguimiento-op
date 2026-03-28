@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usuarios — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  {% include "partials/maestro_styles.html" %}
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Gestión de Usuarios</h1>
+        <p class="page-subtitle">Alta, edición y acceso de cuentas del sistema</p>
+      </div>
+      <button class="btn btn-primary" onclick="abrirModal()">+ Nuevo usuario</button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="toolbar">
+          <input type="text" id="filtro" placeholder="Buscar por nombre o email…" oninput="filtrar()">
+        </div>
+        <span class="text-muted text-sm" id="countLabel"></span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th>Rol</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="5" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal crear/editar -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">Nuevo Usuario</h3>
+    <input type="hidden" id="editId">
+
+    <div class="form-group">
+      <label>Nombre completo *</label>
+      <input type="text" id="fNombre" placeholder="ej: Juan Pérez">
+    </div>
+    <div class="form-group">
+      <label>Email *</label>
+      <input type="email" id="fEmail" placeholder="usuario@empresa.com">
+    </div>
+    <div class="form-group">
+      <label>Rol *</label>
+      <select id="fRol">
+        <option value="operador">Operador</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="observador">Observador</option>
+        <option value="admin">Administrador</option>
+      </select>
+    </div>
+    <div id="bloquePassword">
+      <div class="form-group">
+        <label id="labelPassword">Contraseña *</label>
+        <input type="password" id="fPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+      </div>
+    </div>
+
+    <div id="alertModal" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardar" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal permisos -->
+<div class="modal-overlay" id="modalPermisos">
+  <div class="modal" style="max-width:620px;padding:0;overflow:hidden">
+    <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h3 style="margin:0;font-size:1rem" id="permisosTitle">Permisos</h3>
+        <p style="margin:.2rem 0 0;font-size:.8rem;color:var(--gray-500)" id="permisosSubtitle"></p>
+      </div>
+      <button onclick="cerrarModalPermisos()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray-400)">✕</button>
+    </div>
+    <div style="padding:1rem 1.5rem;max-height:70vh;overflow-y:auto" id="permisosBody">
+      <p class="text-muted text-sm">Cargando…</p>
+    </div>
+    <div style="padding:.85rem 1.5rem;border-top:1px solid var(--gray-100);display:flex;justify-content:space-between;align-items:center">
+      <button class="btn btn-secondary btn-sm" id="btnResetPermisos" onclick="resetPermisos()">↩ Restaurar defaults del rol</button>
+      <button class="btn btn-secondary" onclick="cerrarModalPermisos()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal cambiar contraseña -->
+<div class="modal-overlay" id="modalPwd">
+  <div class="modal">
+    <h3>Cambiar Contraseña</h3>
+    <input type="hidden" id="pwdUserId">
+    <p id="pwdUserNombre" class="text-muted text-sm" style="margin-bottom:1rem"></p>
+    <div class="form-group">
+      <label>Nueva contraseña *</label>
+      <input type="password" id="fNewPwd" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <div id="alertPwd" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalPwd()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarPwd" onclick="guardarPassword()">Cambiar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/usuarios';
+  const ME  = {{ user.id }};
+  let allItems = [];
+
+  document.addEventListener('DOMContentLoaded', cargar);
+
+  async function cargar() {
+    const res = await fetch(API);
+    allItems = await res.json();
+    filtrar();
+  }
+
+  function filtrar() {
+    const q = document.getElementById('filtro').value.toLowerCase();
+    const filtered = allItems.filter(i =>
+      i.nombre.toLowerCase().includes(q) || i.email.toLowerCase().includes(q)
+    );
+    document.getElementById('countLabel').textContent = `${filtered.length} usuario(s)`;
+    const tbody = document.getElementById('tbody');
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(u => `
+      <tr class="${u.activo ? '' : 'row-inactivo'}">
+        <td><strong>${esc(u.nombre)}</strong></td>
+        <td class="text-muted">${esc(u.email)}</td>
+        <td><span class="badge badge-${u.rol}">${rolLabel(u.rol)}</span></td>
+        <td><span class="badge badge-${u.activo ? 'activo' : 'inactivo'}">${u.activo ? 'Activo' : 'Inactivo'}</span></td>
+        <td style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick='editar(${JSON.stringify(u)})'>Editar</button>
+          <button class="btn btn-secondary btn-sm" onclick='abrirModalPwd(${u.id},"${esc(u.nombre)}")'>Contraseña</button>
+          <button class="btn btn-secondary btn-sm" onclick="abrirModalPermisos(${u.id})">🔒 Permisos</button>
+          ${u.id !== ME ? `<button class="btn btn-secondary btn-sm" onclick="toggle(${u.id},this)">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function rolLabel(rol) {
+    return { admin: 'Administrador', supervisor: 'Supervisor', operador: 'Operador', observador: 'Observador' }[rol] ?? rol;
+  }
+
+  // ── Modal crear/editar ────────────────────────────────
+
+  function abrirModal(u = null) {
+    document.getElementById('modalTitle').textContent = u ? 'Editar Usuario' : 'Nuevo Usuario';
+    document.getElementById('editId').value    = u?.id ?? '';
+    document.getElementById('fNombre').value   = u?.nombre ?? '';
+    document.getElementById('fEmail').value    = u?.email ?? '';
+    document.getElementById('fRol').value      = u?.rol ?? 'operador';
+    document.getElementById('fPassword').value = '';
+    document.getElementById('alertModal').style.display = 'none';
+
+    // En edición la contraseña es opcional
+    const editing = !!u;
+    document.getElementById('labelPassword').textContent = editing
+      ? 'Nueva contraseña (dejar vacío para no cambiar)'
+      : 'Contraseña *';
+
+    document.getElementById('modal').classList.add('open');
+    document.getElementById('fNombre').focus();
+  }
+
+  function editar(u) { abrirModal(u); }
+  function cerrarModal() { document.getElementById('modal').classList.remove('open'); }
+
+  async function guardar() {
+    const id       = document.getElementById('editId').value;
+    const nombre   = document.getElementById('fNombre').value.trim();
+    const email    = document.getElementById('fEmail').value.trim();
+    const rol      = document.getElementById('fRol').value;
+    const password = document.getElementById('fPassword').value.trim();
+
+    if (!nombre) { showAlert('alertModal', 'El nombre es obligatorio.'); return; }
+    if (!email)  { showAlert('alertModal', 'El email es obligatorio.'); return; }
+    if (!id && !password) { showAlert('alertModal', 'La contraseña es obligatoria para un usuario nuevo.'); return; }
+    if (password && password.length < 6) { showAlert('alertModal', 'La contraseña debe tener al menos 6 caracteres.'); return; }
+
+    const body = { nombre, email, rol };
+    if (password) body.password = password;
+
+    const btn = document.getElementById('btnGuardar');
+    btn.disabled = true;
+    const res = await fetch(id ? `${API}/${id}` : API, {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    btn.disabled = false;
+
+    if (res.ok) {
+      cerrarModal();
+      await cargar();
+    } else {
+      const err = await res.json();
+      showAlert('alertModal', err.detail ?? 'Error al guardar.');
+    }
+  }
+
+  // ── Modal contraseña ──────────────────────────────────
+
+  function abrirModalPwd(id, nombre) {
+    document.getElementById('pwdUserId').value = id;
+    document.getElementById('pwdUserNombre').textContent = `Usuario: ${nombre}`;
+    document.getElementById('fNewPwd').value = '';
+    document.getElementById('alertPwd').style.display = 'none';
+    document.getElementById('modalPwd').classList.add('open');
+    setTimeout(() => document.getElementById('fNewPwd').focus(), 50);
+  }
+
+  function cerrarModalPwd() { document.getElementById('modalPwd').classList.remove('open'); }
+
+  async function guardarPassword() {
+    const id  = document.getElementById('pwdUserId').value;
+    const pwd = document.getElementById('fNewPwd').value.trim();
+    if (!pwd || pwd.length < 6) {
+      showAlert('alertPwd', 'La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    const btn = document.getElementById('btnGuardarPwd');
+    btn.disabled = true;
+    const res = await fetch(`${API}/${id}/password`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      cerrarModalPwd();
+    } else {
+      const err = await res.json();
+      showAlert('alertPwd', err.detail ?? 'Error al cambiar contraseña.');
+    }
+  }
+
+  // ── Toggle activo ─────────────────────────────────────
+
+  async function toggle(id, btn) {
+    btn.disabled = true;
+    const res = await fetch(`${API}/${id}/toggle`, { method: 'PATCH' });
+    btn.disabled = false;
+    if (res.ok) await cargar();
+    else alert('Error al cambiar estado.');
+  }
+
+  // ── Helpers ───────────────────────────────────────────
+
+  function showAlert(elId, msg) {
+    const el = document.getElementById(elId);
+    el.textContent = msg;
+    el.style.display = '';
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Modal permisos ────────────────────────────────────
+
+  let _permisosUserId = null;
+  let _permisosData   = null;
+
+  async function abrirModalPermisos(id) {
+    _permisosUserId = id;
+    const u = allItems.find(x => x.id === id);
+    document.getElementById('permisosTitle').textContent = `Permisos — ${u?.nombre ?? ''}`;
+    document.getElementById('permisosSubtitle').textContent = `Rol: ${rolLabel(u?.rol ?? '')}`;
+    document.getElementById('permisosBody').innerHTML = '<p class="text-muted text-sm">Cargando…</p>';
+    document.getElementById('modalPermisos').classList.add('open');
+    await cargarPermisos();
+  }
+
+  async function cargarPermisos() {
+    const res = await fetch(`${API}/${_permisosUserId}/permisos`);
+    if (!res.ok) { document.getElementById('permisosBody').innerHTML = '<p class="text-muted text-sm">Error.</p>'; return; }
+    _permisosData = await res.json();
+    renderPermisos();
+  }
+
+  function renderPermisos() {
+    const { efectivos, defaults, overrides, grupos, descripciones } = _permisosData;
+    let html = '';
+    for (const [grupo, permisos] of grupos) {
+      html += `<div style="margin-bottom:1.25rem">
+        <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">${esc(grupo)}</div>`;
+      for (const p of permisos) {
+        const val      = efectivos[p];
+        const esOverride = p in overrides;
+        const defVal   = defaults[p];
+        const cambiado = esOverride ? ' style="font-weight:600"' : '';
+        html += `
+        <div style="display:flex;align-items:center;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--gray-100)">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.85rem"${cambiado}>${esc(descripciones[p] ?? p)}</div>
+            <div style="font-size:.72rem;color:var(--gray-400)">
+              ${esOverride ? `<span style="color:#f59e0b;font-weight:600">Override</span> · Default del rol: ${defVal ? '✅' : '❌'}` : 'Default del rol'}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.4rem;flex-shrink:0">
+            ${esOverride ? `<button class="btn btn-secondary btn-sm" style="padding:.15rem .5rem;font-size:.72rem" onclick="setPermiso('${p}',null)" title="Restaurar default">↩</button>` : ''}
+            <button onclick="setPermiso('${p}',${!val})"
+              style="width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;font-size:.7rem;font-weight:700;
+                     background:${val ? '#16a34a' : '#e5e7eb'};color:${val ? '#fff' : '#6b7280'};transition:background .15s">
+              ${val ? 'SÍ' : 'NO'}
+            </button>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    document.getElementById('permisosBody').innerHTML = html;
+  }
+
+  async function setPermiso(permiso, valor) {
+    const res = await fetch(`${API}/${_permisosUserId}/permisos/${permiso}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ valor }),
+    });
+    if (res.ok) await cargarPermisos();
+  }
+
+  async function resetPermisos() {
+    if (!confirm('¿Restaurar todos los permisos a los valores por defecto del rol?')) return;
+    const res = await fetch(`${API}/${_permisosUserId}/permisos`, { method: 'DELETE' });
+    if (res.ok) await cargarPermisos();
+  }
+
+  function cerrarModalPermisos() { document.getElementById('modalPermisos').classList.remove('open'); }
+
+  document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); })
+  );
+</script>
+</body>
+</html>

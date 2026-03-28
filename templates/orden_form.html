@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nueva Orden — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .producto-selector { display:flex; gap:.5rem; align-items:stretch; }
+    .producto-selector input { flex:1; background:var(--gray-50); cursor:default; }
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+                     z-index:200; align-items:flex-start; justify-content:center; padding-top:5vh; }
+    .modal-overlay.open { display:flex; }
+    .modal-productos { background:#fff; border-radius:12px; box-shadow:var(--shadow-lg);
+                       width:100%; max-width:680px; max-height:80vh; display:flex; flex-direction:column; }
+    .modal-productos .modal-header { padding:1.25rem 1.5rem 1rem; border-bottom:1px solid var(--gray-200); flex-shrink:0; }
+    .modal-productos .modal-header h3 { font-size:1.05rem; font-weight:700; margin-bottom:.75rem; }
+    .modal-productos .modal-body { overflow-y:auto; flex:1; }
+    .modal-productos table { font-size:.875rem; }
+    .modal-productos tbody tr { cursor:pointer; }
+    .modal-productos tbody tr:hover td { background:var(--primary-light); }
+    .no-results { text-align:center; padding:2.5rem; color:var(--gray-400); font-size:.9rem; }
+    .selected-badge { display:inline-flex; align-items:center; gap:.4rem;
+                      background:var(--primary-light); color:var(--primary-dark);
+                      border:1px solid #bfdbfe; border-radius:var(--radius);
+                      padding:.35rem .7rem; font-size:.8rem; font-weight:600; margin-top:.4rem; }
+    .selected-badge .clear { cursor:pointer; color:var(--primary); font-size:1rem; line-height:1; }
+    .selected-badge .clear:hover { color:var(--danger); }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; }
+    .full { grid-column: 1 / -1; }
+    .hint { font-size:.78rem; color:var(--gray-400); margin-top:.25rem; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Nueva Orden de Producción</h1>
+        <p class="page-subtitle">Estado inicial: <strong>Revisar</strong></p>
+      </div>
+      <a href="/ordenes" class="btn btn-secondary">← Volver</a>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="/ordenes/nueva" id="ordenForm">
+
+          <!-- Campos ocultos -->
+          <input type="hidden" name="codigo_producto"      id="hidCodigo">
+          <input type="hidden" name="descripcion_producto" id="hidDesc">
+          <input type="hidden" name="unidad"               id="hidUnidad" value="UN">
+
+          <div class="form-grid">
+
+            <!-- Fecha de carga -->
+            <div class="form-group">
+              <label>Fecha de carga *</label>
+              <input type="date" name="fecha_carga" id="inputFechaCarga" required>
+            </div>
+
+            <!-- OP -->
+            <div class="form-group">
+              <label>N° Orden de Producción (OP)</label>
+              <input type="text" name="op" placeholder="ej: OP-2025-001 (opcional al crear)">
+            </div>
+
+            <!-- Selector de producto -->
+            <div class="form-group full">
+              <label>Producto *</label>
+              <div class="producto-selector">
+                <input type="text" id="displayProducto" readonly
+                       placeholder="Hacé clic en Buscar para seleccionar un producto…"
+                       onclick="abrirSelectorProducto()">
+                <button type="button" class="btn btn-secondary" onclick="abrirSelectorProducto()">
+                  Buscar producto
+                </button>
+              </div>
+              <div id="badgeProducto" style="display:none">
+                <span class="selected-badge">
+                  <span id="badgeCodigo" class="font-mono"></span> —
+                  <span id="badgeDesc"></span>
+                  <span class="clear" onclick="limpiarProducto()" title="Quitar">✕</span>
+                </span>
+              </div>
+              <div id="errorProducto" class="hint" style="color:var(--danger);display:none">
+                Seleccioná un producto del listado.
+              </div>
+            </div>
+
+            <!-- Cantidad -->
+            <div class="form-group">
+              <label>Cantidad *</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <input type="number" name="cantidad" id="inputCantidad"
+                       placeholder="0" min="1" step="1" required disabled style="flex:1" inputmode="numeric">
+                <span id="labelUnidad" style="font-weight:700;color:var(--gray-600);min-width:2.5rem"></span>
+              </div>
+              <div id="hintCantidad" class="hint">Seleccioná un producto para habilitar este campo.</div>
+            </div>
+
+            <!-- Fecha vencimiento -->
+            <div class="form-group">
+              <label>Fecha de Vencimiento</label>
+              <input type="text" name="fecha_vencimiento" placeholder="MM/AAAA (ej: 06/2027)" maxlength="7"
+                     id="inputVencimiento">
+              <div class="hint">Formato: MM/AAAA</div>
+            </div>
+
+            <!-- Lote Granel -->
+            <div class="form-group">
+              <label>Lote Granel</label>
+              <input type="text" name="lote_granel" placeholder="Opcional al crear">
+            </div>
+
+            <!-- Lote PT -->
+            <div class="form-group">
+              <label>Lote Producto Terminado</label>
+              <input type="text" name="lote_pt" placeholder="Opcional al crear">
+            </div>
+
+          </div>
+
+          <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.75rem">
+            <a href="/ordenes" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Crear Orden</button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal selector de productos -->
+<div class="modal-overlay" id="modalProductos" onclick="cerrarSiOverlay(event)">
+  <div class="modal-productos">
+    <div class="modal-header">
+      <h3>Seleccionar Producto</h3>
+      <input type="text" id="buscadorProducto"
+             placeholder="Buscar por código o descripción…"
+             oninput="filtrarProductos(this.value)"
+             autocomplete="off">
+    </div>
+    <div class="modal-body">
+      <table id="tablaProductos">
+        <thead>
+          <tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Forma Farmacéutica</th></tr>
+        </thead>
+        <tbody id="tbodyProductos"></tbody>
+      </table>
+      <div id="sinResultados" class="no-results" style="display:none">Sin resultados.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
+
+  const PRODUCTOS = [
+    {% for p in productos %}
+    { codigo: {{ p.codigo | tojson }}, descripcion: {{ p.descripcion | tojson }},
+      unidad: {{ p.unidad.value | tojson }}, forma_farmaceutica: {{ (p.forma_farmaceutica or '') | tojson }} },
+    {% endfor %}
+  ];
+
+  // Fecha de carga: hoy por defecto
+  document.getElementById('inputFechaCarga').value = new Date().toISOString().slice(0, 10);
+
+  // Máscara MM/AAAA en campo vencimiento
+  document.getElementById('inputVencimiento').addEventListener('input', function() {
+    let v = this.value.replace(/[^\d]/g, '');
+    if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2,6);
+    this.value = v;
+  });
+
+  // ── Selector de producto ───────────────────────────────────────────────────
+
+  function abrirSelectorProducto() {
+    document.getElementById('modalProductos').classList.add('open');
+    const b = document.getElementById('buscadorProducto');
+    b.value = '';
+    filtrarProductos('');
+    setTimeout(() => b.focus(), 50);
+  }
+
+  function cerrarSiOverlay(e) {
+    if (e.target.id === 'modalProductos') cerrarSelectorProducto();
+  }
+
+  function cerrarSelectorProducto() {
+    document.getElementById('modalProductos').classList.remove('open');
+  }
+
+  function filtrarProductos(q) {
+    const term = q.toLowerCase();
+    const filtered = PRODUCTOS.filter(p =>
+      p.codigo.toLowerCase().includes(term) ||
+      p.descripcion.toLowerCase().includes(term) ||
+      (p.forma_farmaceutica || '').toLowerCase().includes(term)
+    );
+    const tbody = document.getElementById('tbodyProductos');
+    const sinRes = document.getElementById('sinResultados');
+    if (!filtered.length) {
+      tbody.innerHTML = '';
+      sinRes.style.display = '';
+      return;
+    }
+    sinRes.style.display = 'none';
+    tbody.innerHTML = filtered.map(p => `
+      <tr onclick='seleccionarProducto(${JSON.stringify(p)})'>
+        <td class="font-mono">${esc(p.codigo)}</td>
+        <td>${esc(p.descripcion)}</td>
+        <td>${fmtUnidad(p.unidad)}</td>
+        <td class="text-muted">${esc(p.forma_farmaceutica || '—')}</td>
+      </tr>
+    `).join('');
+  }
+
+  function seleccionarProducto(p) {
+    document.getElementById('hidCodigo').value = p.codigo;
+    document.getElementById('hidDesc').value   = p.descripcion;
+    document.getElementById('hidUnidad').value = p.unidad;
+    document.getElementById('displayProducto').placeholder = p.descripcion;
+    document.getElementById('badgeCodigo').textContent = p.codigo;
+    document.getElementById('badgeDesc').textContent   = p.descripcion;
+    document.getElementById('badgeProducto').style.display = '';
+    document.getElementById('errorProducto').style.display = 'none';
+    aplicarReglasUnidad(p.unidad);
+    cerrarSelectorProducto();
+    document.getElementById('inputCantidad').focus();
+  }
+
+  function aplicarReglasUnidad(unidad) {
+    const input = document.getElementById('inputCantidad');
+    const label = document.getElementById('labelUnidad');
+    const hint  = document.getElementById('hintCantidad');
+    label.textContent = fmtUnidad(unidad);
+    input.disabled = false;
+    input.value = '';
+    if (unidad === 'UN') {
+      input.step = '1'; input.min = '1'; input.inputMode = 'numeric';
+      input.placeholder = 'Ej: 1000';
+      hint.textContent = 'Solo valores enteros.';
+    } else {
+      input.step = '0.1'; input.min = '0.1'; input.inputMode = 'decimal';
+      input.placeholder = 'Ej: 25.5';
+      hint.textContent = `Hasta 1 decimal (${fmtUnidad(unidad)}).`;
+    }
+  }
+
+  function limpiarProducto() {
+    document.getElementById('hidCodigo').value = '';
+    document.getElementById('hidDesc').value   = '';
+    document.getElementById('hidUnidad').value = 'UN';
+    document.getElementById('displayProducto').placeholder = 'Hacé clic en Buscar para seleccionar un producto…';
+    document.getElementById('badgeProducto').style.display = 'none';
+    const input = document.getElementById('inputCantidad');
+    input.disabled = true; input.value = ''; input.step = '1'; input.placeholder = '0';
+    document.getElementById('labelUnidad').textContent  = '';
+    document.getElementById('hintCantidad').textContent = 'Seleccioná un producto para habilitar este campo.';
+  }
+
+  // ── Validación y reglas de input ───────────────────────────────────────────
+
+  document.getElementById('inputCantidad').addEventListener('input', function() {
+    const unidad = document.getElementById('hidUnidad').value;
+    if (unidad === 'UN') {
+      this.value = this.value.replace(/[^0-9]/g, '');
+    } else {
+      const p = this.value.split('.');
+      if (p.length > 1 && p[1].length > 1) this.value = p[0] + '.' + p[1].slice(0,1);
+    }
+  });
+
+  document.getElementById('ordenForm').addEventListener('submit', function(e) {
+    if (!document.getElementById('hidCodigo').value) {
+      e.preventDefault();
+      document.getElementById('errorProducto').style.display = '';
+      document.getElementById('displayProducto').scrollIntoView({ behavior:'smooth', block:'center' });
+      return;
+    }
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Creando…';
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') cerrarSelectorProducto();
+  });
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

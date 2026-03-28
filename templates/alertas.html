@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alertas — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .config-card {
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid var(--gray-200);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .config-card + .config-card { margin-top: .75rem; }
+    .config-icon { font-size: 1.75rem; flex-shrink: 0; }
+    .config-info { flex: 1; min-width: 200px; }
+    .config-info h3 { margin: 0 0 .2rem; font-size: .95rem; }
+    .config-info p { margin: 0; font-size: .82rem; color: var(--gray-500); }
+    .config-controls { display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
+    .config-controls label { font-size: .82rem; color: var(--gray-600); white-space: nowrap; }
+    .dias-input { width: 70px; text-align: center; font-weight: 700; font-size: 1rem; }
+    .saved-msg { font-size: .78rem; color: #16a34a; font-weight: 600; opacity: 0;
+                 transition: opacity .3s; }
+    .saved-msg.show { opacity: 1; }
+
+    .alert-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: .85rem 1.25rem;
+      border-bottom: 1px solid var(--gray-100);
+      flex-wrap: wrap;
+    }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .alert-info { flex: 1; min-width: 180px; }
+    .alert-info strong { font-size: .9rem; display: block; }
+    .alert-info span { font-size: .8rem; color: var(--gray-500); }
+    .alert-dias {
+      font-size: .78rem; font-weight: 700;
+      background: #fee2e2; color: #991b1b;
+      padding: .2rem .65rem; border-radius: 99px; white-space: nowrap;
+    }
+    .alert-empty { padding: 2rem; text-align: center; color: var(--gray-400); font-size: .9rem; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Alertas</h1>
+        <p class="page-subtitle">Configuración y estado actual de las alertas del sistema</p>
+      </div>
+    </div>
+
+    <!-- Configuración -->
+    {% if user.permisos.configurar_alertas %}
+    <div class="card" style="margin-bottom:1.5rem">
+      <div class="card-header">
+        <span class="card-title">Configuración de alertas</span>
+      </div>
+      <div style="padding:1.25rem 1.5rem" id="listaConfig">
+        <p class="text-muted text-sm">Cargando…</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Alertas activas -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Alertas activas ahora</span>
+        <span class="text-muted text-sm" id="totalAlertas"></span>
+      </div>
+      <div id="listaAlertas">
+        <p class="text-muted text-sm" style="padding:1.5rem">Cargando…</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const TIPO_ICON = {
+    faltante: '⚠',
+    emitido: '⏳',
+    terminada_sin_entrega: '📦',
+  };
+  const TIPO_COLOR = {
+    faltante: '#fee2e2',
+    emitido: '#fef3c7',
+    terminada_sin_entrega: '#dbeafe',
+  };
+  const TIPO_TEXT_COLOR = {
+    faltante: '#991b1b',
+    emitido: '#92400e',
+    terminada_sin_entrega: '#1e40af',
+  };
+
+  let _configs = [];
+
+  const PUEDE_CONFIGURAR = {{ 'true' if user.permisos.configurar_alertas else 'false' }};
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (PUEDE_CONFIGURAR) await cargarConfig();
+    await cargarAlertas();
+  });
+
+  async function cargarConfig() {
+    const res = await fetch('/api/alertas/config');
+    if (!res.ok) return;
+    _configs = await res.json();
+    const contenedor = document.getElementById('listaConfig');
+    contenedor.innerHTML = _configs.map(c => `
+      <div class="config-card">
+        <div class="config-icon">${TIPO_ICON[c.estado_aplica] ?? '🔔'}</div>
+        <div class="config-info">
+          <h3>${esc(c.nombre)}</h3>
+          <p>${esc(c.descripcion)}</p>
+        </div>
+        <div class="config-controls">
+          <label>Días límite:</label>
+          <input type="number" class="dias-input form-control" min="1" max="365"
+                 value="${c.dias_limite}" id="dias-${c.id}"
+                 onchange="guardarConfig(${c.id})">
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+            <input type="checkbox" id="activo-${c.id}" ${c.activo ? 'checked' : ''}
+                   onchange="guardarConfig(${c.id})">
+            Activa
+          </label>
+          <span class="saved-msg" id="saved-${c.id}">✓ Guardado</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function guardarConfig(id) {
+    const dias   = parseInt(document.getElementById(`dias-${id}`).value);
+    const activo = document.getElementById(`activo-${id}`).checked;
+    if (!dias || dias < 1) return;
+
+    const res = await fetch(`/api/alertas/config/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dias_limite: dias, activo }),
+    });
+    if (res.ok) {
+      const msg = document.getElementById(`saved-${id}`);
+      msg.classList.add('show');
+      setTimeout(() => msg.classList.remove('show'), 2000);
+      await cargarAlertas(); // refrescar alertas con la nueva config
+    }
+  }
+
+  async function cargarAlertas() {
+    const res = await fetch('/api/alertas');
+    if (!res.ok) return;
+    const data = await res.json();
+    document.getElementById('totalAlertas').textContent =
+      data.total ? `${data.total} alerta(s)` : '';
+    const contenedor = document.getElementById('listaAlertas');
+    if (!data.alertas.length) {
+      contenedor.innerHTML = `<div class="alert-empty">Sin alertas activas — todo en orden.</div>`;
+      return;
+    }
+    contenedor.innerHTML = data.alertas.map(a => `
+      <div class="alert-item">
+        <div class="alert-icon">${TIPO_ICON[a.tipo] ?? '🔔'}</div>
+        <div class="alert-info">
+          <strong>${esc(a.nombre_alerta)}</strong>
+          <span>OP ${esc(a.op ?? '—')} — ${esc(a.descripcion_producto)}</span>
+        </div>
+        <span class="alert-dias">${a.dias_en_estado} día(s) · límite: ${a.dias_limite}</span>
+        <a href="/ordenes/${a.orden_id}" class="btn btn-secondary btn-sm">Ver orden</a>
+      </div>
+    `).join('');
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>

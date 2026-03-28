@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<div class="app-layout">
+
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Resumen del estado de producción</p>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card stat-yellow">
+        <div class="stat-label">Revisar</div>
+        <div class="stat-value" id="statRevisar">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card stat-red">
+        <div class="stat-label">Faltantes</div>
+        <div class="stat-value" id="statFaltantes">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card" style="--card-accent:#8b5cf6">
+        <div class="stat-label">Para Emitir</div>
+        <div class="stat-value" id="statParaEmitir">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card stat-blue">
+        <div class="stat-label">En Proceso</div>
+        <div class="stat-value" id="statEnProceso">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card stat-green">
+        <div class="stat-label">Terminadas</div>
+        <div class="stat-value" id="statTerminada">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Entregadas</div>
+        <div class="stat-value" id="statEntregada">—</div>
+        <div class="stat-sub">órdenes</div>
+      </div>
+      <div class="stat-card" style="--card-accent:#0891b2;cursor:pointer" onclick="abrirModalEntregasMes()">
+        <div class="stat-label">Unidades entregadas</div>
+        <div class="stat-value" id="statUnidadesMes">—</div>
+        <div class="stat-sub"><span id="statMesLabel"></span> · <span id="statEntregasMes">—</span> entregas</div>
+      </div>
+    </div>
+
+<!-- Modal: detalle entregas del mes -->
+<div id="modalEntregasMes" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;padding:1rem">
+  <div style="background:#fff;border-radius:12px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 style="margin:0;font-size:1.1rem">Entregas del mes</h3>
+        <p style="margin:.2rem 0 0;font-size:.85rem;color:var(--gray-500)" id="modalMesLabel"></p>
+      </div>
+      <button onclick="cerrarModalEntregasMes()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--gray-400);line-height:1">×</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem">
+      <!-- Mini stats -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.5rem">
+        <div style="background:var(--gray-50);border-radius:8px;padding:.75rem 1rem;text-align:center">
+          <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">Entregas registradas</div>
+          <div style="font-size:1.75rem;font-weight:700;color:var(--gray-900)" id="mTotalEntregas">—</div>
+        </div>
+        <div style="background:var(--gray-50);border-radius:8px;padding:.75rem 1rem;text-align:center">
+          <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">Unidades entregadas</div>
+          <div style="font-size:1.75rem;font-weight:700;color:#0891b2" id="mTotalUnidades">—</div>
+        </div>
+      </div>
+      <!-- Pie chart + leyenda -->
+      <div style="font-size:.8rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+        Por forma farmacéutica
+      </div>
+      <div id="mChartArea" style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
+        <svg id="mPieSvg" viewBox="0 0 200 200" width="180" height="180" style="flex-shrink:0"></svg>
+        <div id="mLeyenda" style="flex:1;min-width:180px"></div>
+      </div>
+    </div>
+    <div style="padding:.75rem 1.5rem;border-top:1px solid var(--gray-100);text-align:right">
+      <a href="/entregas" class="btn btn-secondary btn-sm">Ver detalle completo →</a>
+      <button class="btn btn-primary btn-sm" onclick="cerrarModalEntregasMes()" style="margin-left:.5rem">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+    <!-- Alertas -->
+    <div id="seccionAlertas" style="display:none;margin-bottom:1rem">
+      <div class="card" style="border-left:4px solid #ef4444">
+        <div class="card-header" style="background:#fff7f7">
+          <span class="card-title" style="color:#b91c1c">⚠ Alertas activas</span>
+          {% if user.permisos.configurar_alertas %}
+          <a href="/alertas" class="btn btn-secondary btn-sm">Configurar</a>
+          {% endif %}
+        </div>
+        <div id="listaAlertasDash"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Últimas órdenes</span>
+        <a href="/ordenes" class="btn btn-primary btn-sm">Ver todas</a>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>OP</th>
+              <th>Producto</th>
+              <th>Lote PT</th>
+              <th>Cantidad</th>
+              <th>Estado</th>
+              <th>Fecha carga</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyOrdenes">
+            <tr><td colspan="7" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script src="/static/js/main.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', loadDashboard);
+
+  async function loadDashboard() {
+    try {
+      const [sr, or, ar] = await Promise.all([
+        fetch('/api/stats'),
+        fetch('/api/ordenes?limit=10'),
+        fetch('/api/alertas'),
+      ]);
+      if (sr.ok) {
+        const s = await sr.json();
+        document.getElementById('statRevisar').textContent    = s.revisar;
+        document.getElementById('statParaEmitir').textContent = s.para_emitir;
+        document.getElementById('statEnProceso').textContent  = s.en_proceso;
+        document.getElementById('statTerminada').textContent  = s.terminada;
+        document.getElementById('statEntregada').textContent    = s.entregada;
+        document.getElementById('statFaltantes').textContent    = s.faltante;
+        document.getElementById('statUnidadesMes').textContent  = (s.unidades_mes ?? 0).toLocaleString('es-AR');
+        document.getElementById('statEntregasMes').textContent  = s.entregas_mes;
+        const hoy = new Date();
+        const meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        const mesesL = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+        document.getElementById('statMesLabel').textContent = meses[hoy.getMonth()];
+      }
+      if (or.ok) {
+        const d = await or.json();
+        renderOrdenes(d.items);
+      }
+      if (ar.ok) {
+        const a = await ar.json();
+        renderAlertas(a.alertas ?? []);
+      }
+    } catch(e) {
+      renderOrdenes([]);
+    }
+  }
+
+  const TIPO_ICON_A = { faltante:'⚠', emitido:'⏳', terminada_sin_entrega:'📦' };
+
+  function renderAlertas(alertas) {
+    if (!alertas.length) return;
+    document.getElementById('seccionAlertas').style.display = '';
+    const contenedor = document.getElementById('listaAlertasDash');
+    contenedor.innerHTML = alertas.map(a => `
+      <div style="display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;
+                  border-bottom:1px solid #fee2e2;flex-wrap:wrap">
+        <span style="font-size:1.1rem;flex-shrink:0">${TIPO_ICON_A[a.tipo] ?? '🔔'}</span>
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:.85rem;font-weight:600;color:#b91c1c">${esc(a.nombre_alerta)}</div>
+          <div style="font-size:.8rem;color:var(--gray-600)">
+            OP ${esc(a.op ?? '—')} — ${esc(a.descripcion_producto)}
+          </div>
+        </div>
+        <span style="font-size:.75rem;font-weight:700;background:#fee2e2;color:#991b1b;
+                     padding:.2rem .6rem;border-radius:99px;white-space:nowrap">
+          ${a.dias_en_estado} día(s)
+        </span>
+        <a href="/ordenes/${a.orden_id}" class="btn btn-secondary btn-sm">Ver</a>
+      </div>
+    `).join('');
+  }
+
+  function renderOrdenes(ordenes) {
+    const tbody = document.getElementById('tbodyOrdenes');
+    if (!ordenes.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin órdenes registradas.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = ordenes.map(o => `
+      <tr>
+        <td class="font-mono">${esc(o.op)}</td>
+        <td>${esc(o.descripcion_producto)}</td>
+        <td class="font-mono text-sm">${esc(o.lote_pt ?? '—')}</td>
+        <td>${esc(String(o.cantidad))} ${fmtUnidad(o.unidad)}</td>
+        <td><span class="badge badge-${esc(o.estado)}">${esc(o.estado.replace('_',' '))}</span></td>
+        <td class="text-sm text-muted">${fmtDate(o.fecha_carga)}</td>
+        <td><a href="/ordenes/${o.id}" class="btn btn-secondary btn-sm">Ver</a></td>
+      </tr>
+    `).join('');
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+  }
+
+  // ── Modal entregas del mes ─────────────────────────────────────────────────
+  const COLORES_PIE = ['#3b82f6','#10b981','#8b5cf6','#f59e0b','#ef4444',
+                       '#06b6d4','#84cc16','#f97316','#ec4899','#6366f1'];
+  const MESES_MODAL = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                       'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+  async function abrirModalEntregasMes() {
+    const modal = document.getElementById('modalEntregasMes');
+    modal.style.display = 'flex';
+    const hoy = new Date();
+    const mes = hoy.getMonth() + 1, anio = hoy.getFullYear();
+    document.getElementById('modalMesLabel').textContent = `${MESES_MODAL[mes]} ${anio}`;
+    document.getElementById('mTotalEntregas').textContent = '…';
+    document.getElementById('mTotalUnidades').textContent = '…';
+    document.getElementById('mPieSvg').innerHTML = '';
+    document.getElementById('mLeyenda').innerHTML = '';
+
+    const res = await fetch(`/api/entregas?mes=${mes}&anio=${anio}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    document.getElementById('mTotalEntregas').textContent = data.resumen.total_entregas;
+    document.getElementById('mTotalUnidades').textContent = Math.round(data.resumen.total_unidades).toLocaleString('es-AR');
+
+    renderPie(data.por_forma, data.resumen.total_unidades);
+  }
+
+  function cerrarModalEntregasMes() {
+    document.getElementById('modalEntregasMes').style.display = 'none';
+  }
+
+  function renderPie(formas, total) {
+    const svg = document.getElementById('mPieSvg');
+    const ley = document.getElementById('mLeyenda');
+    if (!formas.length || !total) {
+      svg.innerHTML = '<text x="100" y="105" text-anchor="middle" font-size="12" fill="#9ca3af">Sin datos</text>';
+      ley.innerHTML = '';
+      return;
+    }
+
+    const cx = 100, cy = 100, R = 88, ri = 52;
+    let angle = -Math.PI / 2;
+    const paths = [];
+
+    formas.forEach((f, i) => {
+      const slice = (f.unidades / total) * 2 * Math.PI;
+      const end   = angle + slice;
+      const large = slice > Math.PI ? 1 : 0;
+      const cos1 = Math.cos(angle), sin1 = Math.sin(angle);
+      const cos2 = Math.cos(end),   sin2 = Math.sin(end);
+      const color = COLORES_PIE[i % COLORES_PIE.length];
+      paths.push(
+        `<path d="M${cx+R*cos1},${cy+R*sin1} A${R},${R} 0 ${large},1 ${cx+R*cos2},${cy+R*sin2} ` +
+        `L${cx+ri*cos2},${cy+ri*sin2} A${ri},${ri} 0 ${large},0 ${cx+ri*cos1},${cy+ri*sin1} Z" ` +
+        `fill="${color}" stroke="white" stroke-width="2"><title>${f.forma}: ${f.unidades.toLocaleString('es-AR')}</title></path>`
+      );
+      angle = end;
+    });
+
+    svg.innerHTML = paths.join('') +
+      `<text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="11" fill="#6b7280">Total</text>` +
+      `<text x="${cx}" y="${cy+12}" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">${Math.round(total).toLocaleString('es-AR')}</text>`;
+
+    ley.innerHTML = formas.map((f, i) => {
+      const pct = Math.round(f.unidades / total * 100);
+      const color = COLORES_PIE[i % COLORES_PIE.length];
+      return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem;font-size:.78rem">
+        <span style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0"></span>
+        <span style="flex:1;color:var(--gray-700);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(f.forma)}</span>
+        <span style="color:var(--gray-500);white-space:nowrap">${f.unidades.toLocaleString('es-AR')} <span style="color:var(--gray-400)">${pct}%</span></span>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('modalEntregasMes').addEventListener('click', e => {
+    if (e.target === e.currentTarget) cerrarModalEntregasMes();
+  });
+</script>
+</body>
+</html>

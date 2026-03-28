@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backup — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .backup-grid { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start; }
+    @media (max-width:900px) { .backup-grid { grid-template-columns:1fr; } }
+
+    .section-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+                     color:var(--gray-500); margin:0 0 1rem; }
+
+    .form-group { margin-bottom:.85rem; }
+    .form-group label { display:block; font-size:.8rem; font-weight:600; color:var(--gray-600); margin-bottom:.3rem; }
+    .form-group input[type=text],
+    .form-group input[type=time],
+    .form-group input[type=number],
+    .form-group select { width:100%; padding:.45rem .7rem; border:1px solid var(--gray-200);
+                         border-radius:6px; font-size:.875rem; box-sizing:border-box; }
+    .form-group input:focus, .form-group select:focus { outline:none; border-color:var(--primary); }
+    .hint { font-size:.73rem; color:var(--gray-400); margin-top:.2rem; }
+
+    .ruta-row { display:flex; gap:.5rem; align-items:center; }
+    .ruta-row input { flex:1; }
+    .btn-folder { padding:.45rem .7rem; border:1px solid var(--gray-200); border-radius:6px;
+                  background:#f8fafc; cursor:pointer; font-size:.85rem; white-space:nowrap; }
+    .btn-folder:hover { background:#f1f5f9; }
+
+    .dias-row { display:none; }
+
+    .ultima-info { font-size:.78rem; color:var(--gray-400); margin-top:.75rem; }
+
+    #statusMsg { margin-bottom:1rem; padding:.6rem 1rem; border-radius:6px; font-size:.875rem; display:none; }
+    .msg-ok  { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+    .msg-err { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+
+    .badge { display:inline-block; padding:.18rem .5rem; border-radius:999px; font-size:.68rem; font-weight:700; }
+    .badge-auto   { background:#dbeafe; color:#1e40af; }
+    .badge-manual { background:#e0e7ff; color:#4338ca; }
+    .badge-pre    { background:#fef9c3; color:#92400e; }
+
+    .warn-box { background:#fef3c7; border:1px solid #fde68a; border-radius:6px; padding:.7rem 1rem;
+                font-size:.8rem; color:#78350f; margin-bottom:1rem; }
+
+    .table-actions { display:flex; gap:.35rem; flex-wrap:wrap; }
+    .btn-sm { padding:.28rem .6rem; font-size:.78rem; }
+
+    .divider { border:none; border-top:1px solid var(--gray-100); margin:1.25rem 0; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Backup de Base de Datos</h1>
+        <p class="page-subtitle">Configuración y gestión de copias de seguridad</p>
+      </div>
+      <button class="btn btn-primary" id="backupManualBtn" onclick="hacerBackup()">
+        📦 Hacer backup ahora
+      </button>
+    </div>
+
+    <div id="statusMsg"></div>
+
+    <div class="backup-grid">
+
+      <!-- ── Configuración ──────────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-header">
+          <p class="section-title">⚙️ Configuración</p>
+        </div>
+
+        <div style="padding:1.25rem 1.5rem">
+
+          <div class="form-group">
+            <label>Carpeta de destino</label>
+            <div class="ruta-row">
+              <input type="text" id="cfgRuta" placeholder="Por defecto: carpeta /backups junto a la DB" />
+              <button class="btn-folder" onclick="elegirCarpeta()" title="Seleccionar carpeta">📂 Examinar</button>
+            </div>
+            <div class="hint">Ruta en el servidor donde se guardarán los backups.</div>
+          </div>
+
+          <div class="form-group">
+            <label>Frecuencia automática</label>
+            <select id="cfgFrecuencia" onchange="toggleDias()">
+              <option value="manual">Solo manual</option>
+              <option value="diario">Diario</option>
+              <option value="semanal">Semanal</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Hora del backup automático</label>
+            <input type="time" id="cfgHora" value="02:00" />
+          </div>
+
+          <div class="form-group dias-row" id="diasRow">
+            <label>Día de la semana</label>
+            <select id="cfgDia">
+              <option value="1">Lunes</option>
+              <option value="2">Martes</option>
+              <option value="3">Miércoles</option>
+              <option value="4">Jueves</option>
+              <option value="5">Viernes</option>
+              <option value="6">Sábado</option>
+              <option value="7">Domingo</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Backups a conservar</label>
+            <input type="number" id="cfgRetener" min="1" max="100" value="10" />
+            <div class="hint">Los más antiguos se eliminan automáticamente al superar este límite.</div>
+          </div>
+
+          <button class="btn btn-primary" onclick="guardarConfig()">💾 Guardar configuración</button>
+
+          <div class="ultima-info" id="ultimaInfo"></div>
+        </div>
+      </div>
+
+      <!-- ── Lista de backups ───────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+          <p class="section-title" style="margin:0">📁 Backups disponibles</p>
+          <button class="btn btn-secondary btn-sm" onclick="cargarLista()">🔄 Actualizar</button>
+        </div>
+
+        <div style="padding:1.25rem 1.5rem">
+          <div class="warn-box" id="warnRestore" style="display:none">
+            ⚠️ Al restaurar se sobrescribirá la base de datos activa. Se crea un backup de seguridad automático antes de la operación. Reiniciá la aplicación luego para que los cambios se reflejen.
+          </div>
+          <div id="listaContainer">
+            <p class="text-muted text-sm">Cargando…</p>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .backup-grid -->
+  </main>
+</div>
+
+<script>
+function showMsg(txt, ok=true) {
+  const el = document.getElementById('statusMsg');
+  el.textContent = txt;
+  el.className = ok ? 'msg-ok' : 'msg-err';
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+function toggleDias() {
+  const v = document.getElementById('cfgFrecuencia').value;
+  document.getElementById('diasRow').style.display = v === 'semanal' ? '' : 'none';
+}
+
+async function elegirCarpeta() {
+  const r = await fetch('/api/backup/elegir-carpeta', { method: 'POST' });
+  if (!r.ok) return;
+  const d = await r.json();
+  if (d.ruta) document.getElementById('cfgRuta').value = d.ruta;
+}
+
+async function cargarConfig() {
+  const r = await fetch('/api/backup/config');
+  if (!r.ok) return;
+  const c = await r.json();
+  document.getElementById('cfgRuta').value       = c.ruta       || '';
+  document.getElementById('cfgFrecuencia').value = c.frecuencia || 'manual';
+  document.getElementById('cfgHora').value       = c.hora       || '02:00';
+  document.getElementById('cfgDia').value        = c.dia_semana || 1;
+  document.getElementById('cfgRetener').value    = c.retener    || 10;
+  toggleDias();
+  if (c.ultimo_backup) {
+    const d = new Date(c.ultimo_backup);
+    document.getElementById('ultimaInfo').textContent = 'Último backup: ' + d.toLocaleString('es-AR');
+  }
+}
+
+async function guardarConfig() {
+  const body = {
+    ruta:       document.getElementById('cfgRuta').value.trim(),
+    frecuencia: document.getElementById('cfgFrecuencia').value,
+    hora:       document.getElementById('cfgHora').value,
+    dia_semana: parseInt(document.getElementById('cfgDia').value),
+    retener:    parseInt(document.getElementById('cfgRetener').value),
+  };
+  const r = await fetch('/api/backup/config', {
+    method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  if (r.ok) {
+    showMsg('Configuración guardada.', true);
+    cargarConfig();
+  } else {
+    const e = await r.json().catch(()=>({}));
+    showMsg('Error: ' + (e.detail || r.status), false);
+  }
+}
+
+async function hacerBackup() {
+  const btn = document.getElementById('backupManualBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generando…';
+  const r = await fetch('/api/backup', { method: 'POST' });
+  btn.disabled = false;
+  btn.innerHTML = '📦 Hacer backup ahora';
+  if (r.ok) {
+    const d = await r.json();
+    showMsg('Backup creado: ' + d.nombre, true);
+    cargarConfig();
+    cargarLista();
+  } else {
+    const e = await r.json().catch(()=>({}));
+    showMsg('Error: ' + (e.detail || r.status), false);
+  }
+}
+
+function tipoBadge(nombre) {
+  if (nombre.includes('_auto'))             return '<span class="badge badge-auto">auto</span>';
+  if (nombre.includes('_pre_restauracion')) return '<span class="badge badge-pre">pre-restauración</span>';
+  if (nombre.includes('_pre_importacion'))  return '<span class="badge badge-pre">pre-importación</span>';
+  return '<span class="badge badge-manual">manual</span>';
+}
+
+function fmtFecha(iso) {
+  return new Date(iso).toLocaleString('es-AR');
+}
+
+async function cargarLista() {
+  const cont = document.getElementById('listaContainer');
+  cont.innerHTML = '<p class="text-muted text-sm">Cargando…</p>';
+  const r = await fetch('/api/backup/list');
+  if (!r.ok) { cont.innerHTML = '<p style="color:#ef4444">Error al cargar lista.</p>'; return; }
+  const lista = await r.json();
+  if (!lista.length) {
+    document.getElementById('warnRestore').style.display = 'none';
+    cont.innerHTML = '<p class="text-muted text-sm">No hay backups disponibles aún.</p>';
+    return;
+  }
+  document.getElementById('warnRestore').style.display = '';
+  let html = `<div class="table-wrapper"><table>
+    <thead><tr>
+      <th>Archivo</th><th>Tipo</th><th>Fecha</th><th>Tamaño</th><th></th>
+    </tr></thead><tbody>`;
+  lista.forEach(b => {
+    html += `<tr>
+      <td style="font-size:.75rem;font-family:monospace;word-break:break-all;max-width:180px">${b.nombre}</td>
+      <td>${tipoBadge(b.nombre)}</td>
+      <td style="white-space:nowrap;font-size:.82rem">${fmtFecha(b.fecha)}</td>
+      <td style="white-space:nowrap;font-size:.82rem">${b.tamano_mb} MB</td>
+      <td>
+        <div class="table-actions">
+          <a class="btn btn-secondary btn-sm" href="/api/backup/download/${encodeURIComponent(b.nombre)}">⬇</a>
+          <button class="btn btn-primary btn-sm" onclick="restaurar('${b.nombre}')">↩ Restaurar</button>
+          <button class="btn btn-danger btn-sm" onclick="eliminar('${b.nombre}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+
+async function eliminar(nombre) {
+  if (!confirm('¿Eliminar el backup ' + nombre + '?')) return;
+  const r = await fetch('/api/backup/' + encodeURIComponent(nombre), { method: 'DELETE' });
+  if (r.ok) { showMsg('Backup eliminado.', true); cargarLista(); }
+  else { const e = await r.json().catch(()=>({})); showMsg('Error: ' + (e.detail || r.status), false); }
+}
+
+async function restaurar(nombre) {
+  if (!confirm('Se restaurará la base de datos con:\n' + nombre +
+    '\n\nSe creará un backup de la BD actual antes de proceder.\n\n¿Confirmar?')) return;
+  const r = await fetch('/api/backup/restaurar/' + encodeURIComponent(nombre), { method: 'POST' });
+  const d = await r.json().catch(()=>({}));
+  if (r.ok) { showMsg(d.mensaje || 'Restauración completada.', true); cargarLista(); cargarConfig(); }
+  else { showMsg('Error al restaurar: ' + (d.detail || r.status), false); }
+}
+
+cargarConfig();
+cargarLista();
+</script>
+</body>
+</html>

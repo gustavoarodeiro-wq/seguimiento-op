@@ -1,0 +1,56 @@
+<nav class="sidebar">
+  <div class="sidebar-section">Principal</div>
+  <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
+    <span class="icon">📋</span> Dashboard
+  </a>
+
+  <div class="sidebar-section">Producción</div>
+  <a href="/ordenes" class="sidebar-link {% if '/ordenes' in request.url.path %}active{% endif %}">
+    <span class="icon">📦</span> Órdenes
+  </a>
+  <a href="/faltantes" class="sidebar-link {% if request.url.path == '/faltantes' %}active{% endif %}">
+    <span class="icon">⚠</span> Faltantes
+  </a>
+  <a href="/entregas" class="sidebar-link {% if request.url.path == '/entregas' %}active{% endif %}">
+    <span class="icon">🚚</span> Entregas
+  </a>
+
+  <div class="sidebar-section">Maestros</div>
+  <a href="/productos" class="sidebar-link {% if request.url.path == '/productos' %}active{% endif %}">
+    <span class="icon">💊</span> Productos
+  </a>
+  <a href="/materias-primas" class="sidebar-link {% if request.url.path == '/materias-primas' %}active{% endif %}">
+    <span class="icon">🧪</span> Materias Primas
+  </a>
+  <a href="/materiales-empaque" class="sidebar-link {% if request.url.path == '/materiales-empaque' %}active{% endif %}">
+    <span class="icon">📦</span> Mat. Empaque
+  </a>
+  <a href="/formas-farmaceuticas" class="sidebar-link {% if request.url.path == '/formas-farmaceuticas' %}active{% endif %}">
+    <span class="icon">🏷</span> Formas Farmac.
+  </a>
+  <a href="/formulas" class="sidebar-link {% if request.url.path == '/formulas' %}active{% endif %}">
+    <span class="icon">🧬</span> Fórmulas
+  </a>
+  <a href="/graneles" class="sidebar-link {% if request.url.path == '/graneles' %}active{% endif %}">
+    <span class="icon">🧪</span> Graneles
+  </a>
+
+  {% if user.permisos.gestionar_usuarios or user.permisos.ver_alertas %}
+  <div class="sidebar-section">Administración</div>
+  {% if user.permisos.gestionar_usuarios %}
+  <a href="/usuarios" class="sidebar-link {% if request.url.path == '/usuarios' %}active{% endif %}">
+    <span class="icon">👥</span> Usuarios
+  </a>
+  {% endif %}
+  {% if user.permisos.ver_alertas %}
+  <a href="/alertas" class="sidebar-link {% if request.url.path == '/alertas' %}active{% endif %}">
+    <span class="icon">🔔</span> Alertas
+  </a>
+  {% endif %}
+  {% if user.permisos.gestionar_usuarios %}
+  <a href="/backup" class="sidebar-link {% if request.url.path == '/backup' %}active{% endif %}">
+    <span class="icon">💾</span> Backup
+  </a>
+  {% endif %}
+  {% endif %}
+</nav>
