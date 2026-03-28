@@ -1135,6 +1135,8 @@ async def importar_ff(
         try:
             nombre     = _cel(row, headers, "nombre")
             etapas_raw = _cel(row, headers, "etapas")
+            unidad_raw = _cel(row, headers, "unidad") if "unidad" in headers else None
+            unidad_ff  = unidad_raw.upper() if unidad_raw else None
 
             if not nombre:
                 raise ValueError("El nombre está vacío.")
@@ -1144,9 +1146,11 @@ async def importar_ff(
 
             if existente:
                 ff = existente
+                if unidad_ff is not None:
+                    ff.unidad = unidad_ff or None
                 actualizados += 1
             else:
-                ff = FormaFarmaceutica(nombre=nombre, activo=True)
+                ff = FormaFarmaceutica(nombre=nombre, activo=True, unidad=unidad_ff or None)
                 db.add(ff)
                 db.flush()  # necesario para obtener ff.id antes de agregar etapas
                 creados += 1
