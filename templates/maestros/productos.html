@@ -213,8 +213,9 @@
   }
 
   function _acciones(i) {
-    return `<td style="display:flex;gap:.4rem">
+    return `<td style="display:flex;gap:.4rem;flex-wrap:wrap">
       ${canEdit ? `<button class="btn btn-secondary btn-sm" onclick='editar(${JSON.stringify(i)})'>Editar</button>` : ''}
+      <button class="btn btn-secondary btn-sm" onclick="abrirModalEtapas(${i.id}, '${esc(i.codigo)}')">Etapas</button>
       ${isAdmin ? `<button class="btn btn-secondary btn-sm" onclick="toggle(${i.id},this)">${i.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
     </td>`;
   }
@@ -392,7 +393,205 @@
   document.getElementById('modal').addEventListener('click', e => {
     if (e.target.id === 'modal') cerrarModal();
   });
+
+  // ── Modal etapas del producto ──────────────────────────────────────────────
+  let _productoEtapasId = null;
+  let _etapaSelId = null;
+
+  async function abrirModalEtapas(productoId, codigo) {
+    _productoEtapasId = productoId;
+    _etapaSelId = null;
+    document.getElementById('modalEtapasTitle').textContent = `Etapas — ${codigo}`;
+    document.getElementById('panelAreas').style.display = 'none';
+    document.getElementById('modalEtapas').classList.add('open');
+    await cargarEtapasProducto();
+  }
+
+  function cerrarModalEtapas() {
+    document.getElementById('modalEtapas').classList.remove('open');
+    _productoEtapasId = null;
+    _etapaSelId = null;
+  }
+
+  async function cargarEtapasProducto() {
+    const res = await fetch(`/api/productos/${_productoEtapasId}/etapas`);
+    const etapas = await res.json();
+    const lista = document.getElementById('listaEtapasProducto');
+    if (!etapas.length) {
+      lista.innerHTML = '<div style="padding:1rem;color:var(--gray-400);font-size:.875rem">Sin etapas definidas.</div>';
+      return;
+    }
+    lista.innerHTML = etapas.map(e => `
+      <div class="ep-row ${e.activo ? '' : 'ep-inactivo'} ${_etapaSelId === e.id ? 'ep-selected' : ''}"
+           onclick="seleccionarEtapaProducto(${e.id})">
+        <span class="ep-num">${e.orden}</span>
+        <div style="flex:1">
+          <div>${esc(e.nombre)}</div>
+          ${e.areas.length ? `<div style="font-size:.72rem;color:var(--gray-400)">${e.areas.map(a => esc(a.nombre)).join(', ')}</div>` : ''}
+        </div>
+        ${isAdmin ? `
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirEditEtapaProducto(${e.id},'${esc(e.nombre)}')">✎</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleEtapaProducto(${e.id})">${e.activo ? '○' : '●'}</button>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                  onclick="event.stopPropagation();eliminarEtapaProducto(${e.id})">✕</button>
+        ` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function seleccionarEtapaProducto(etapaId) {
+    _etapaSelId = etapaId;
+    await cargarEtapasProducto();
+    const panel = document.getElementById('panelAreas');
+    panel.style.display = '';
+    document.getElementById('listaAreasProducto').innerHTML = '<div style="padding:1rem;color:var(--gray-400);font-size:.875rem">Cargando…</div>';
+    const res = await fetch(`/api/etapas-producto/${etapaId}/areas-disponibles`);
+    const data = await res.json();
+    const lista = document.getElementById('listaAreasProducto');
+    if (!data.disponibles.length) {
+      lista.innerHTML = `<div style="padding:1rem;font-size:.875rem;color:var(--gray-400)">
+        No hay áreas en el maestro para esta etapa.<br>
+        <a href="/etapas-maestro" target="_blank" style="color:var(--primary)">Ir a Etapas / Áreas →</a></div>`;
+      return;
+    }
+    lista.innerHTML = data.disponibles.map(a => `
+      <label style="display:flex;align-items:center;gap:.6rem;padding:.5rem 1rem;cursor:pointer;${a.activo ? '' : 'opacity:.5'}">
+        <input type="checkbox" value="${a.id}" ${data.asignadas.includes(a.id) ? 'checked' : ''} ${a.activo ? '' : 'disabled'}>
+        <span style="font-size:.875rem">${esc(a.nombre)}</span>
+      </label>
+    `).join('');
+  }
+
+  async function guardarAreasEtapaProducto() {
+    const checks = document.querySelectorAll('#listaAreasProducto input[type=checkbox]:checked');
+    const area_ids = Array.from(checks).map(c => parseInt(c.value));
+    const btn = document.getElementById('btnGuardarAreasProducto');
+    btn.disabled = true;
+    await fetch(`/api/etapas-producto/${_etapaSelId}/areas`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ area_ids }),
+    });
+    btn.disabled = false;
+    await cargarEtapasProducto();
+  }
+
+  async function toggleEtapaProducto(id) {
+    await fetch(`/api/etapas-producto/${id}/toggle`, { method: 'PATCH' });
+    if (_etapaSelId === id) { _etapaSelId = null; document.getElementById('panelAreas').style.display = 'none'; }
+    await cargarEtapasProducto();
+  }
+
+  async function eliminarEtapaProducto(id) {
+    if (!confirm('¿Eliminás esta etapa?')) return;
+    const res = await fetch(`/api/etapas-producto/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      if (_etapaSelId === id) { _etapaSelId = null; document.getElementById('panelAreas').style.display = 'none'; }
+      await cargarEtapasProducto();
+    }
+  }
+
+  async function abrirEditEtapaProducto(id, nombre) {
+    document.getElementById('epEditId').value = id ?? '';
+    const sel = document.getElementById('epNombre');
+    const res = await fetch('/api/etapas-maestro');
+    const maestro = await res.json();
+    sel.innerHTML = '<option value="">— Seleccioná —</option>' +
+      maestro.filter(e => e.activo).map(e =>
+        `<option value="${esc(e.nombre)}" ${e.nombre === nombre ? 'selected' : ''}>${esc(e.nombre)}</option>`
+      ).join('');
+    document.getElementById('modalEtapaEdit').classList.add('open');
+    setTimeout(() => sel.focus(), 50);
+  }
+
+  async function guardarEditEtapaProducto() {
+    const id = document.getElementById('epEditId').value;
+    const nombre = document.getElementById('epNombre').value.trim();
+    if (!nombre) return;
+    const btn = document.getElementById('btnGuardarEpEdit');
+    btn.disabled = true;
+    const url    = id ? `/api/etapas-producto/${id}` : `/api/productos/${_productoEtapasId}/etapas`;
+    const method = id ? 'PUT' : 'POST';
+    await fetch(url, {
+      method,
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nombre }),
+    });
+    btn.disabled = false;
+    document.getElementById('modalEtapaEdit').classList.remove('open');
+    await cargarEtapasProducto();
+  }
+
+  document.querySelectorAll('#modalEtapas, #modalEtapaEdit').forEach(el =>
+    el.addEventListener('click', e => {
+      if (e.target === el) {
+        if (el.id === 'modalEtapas') cerrarModalEtapas();
+        else el.classList.remove('open');
+      }
+    })
+  );
 </script>
+<!-- ── Modal etapas del producto ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalEtapas">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:700px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <div style="padding:1.25rem 1.5rem;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:.75rem">
+      <h3 id="modalEtapasTitle" style="margin:0;font-size:1.05rem;flex:1">Etapas</h3>
+      {% if user.rol == 'admin' %}
+      <button class="btn btn-primary btn-sm" onclick="abrirEditEtapaProducto(null,'')">+ Etapa</button>
+      {% endif %}
+      <button onclick="cerrarModalEtapas()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
+    </div>
+
+    <div style="flex:1;overflow:hidden;display:flex;min-height:0">
+      <!-- Lista etapas -->
+      <div style="flex:1;overflow-y:auto;border-right:1px solid var(--gray-200)">
+        <div id="listaEtapasProducto"></div>
+      </div>
+      <!-- Panel áreas -->
+      <div id="panelAreas" style="display:none;flex:1;display:none;flex-direction:column">
+        <div style="padding:.75rem 1rem;background:var(--gray-50);border-bottom:1px solid var(--gray-200);font-size:.8rem;font-weight:700;color:var(--gray-500);text-transform:uppercase">Áreas</div>
+        <div id="listaAreasProducto" style="flex:1;overflow-y:auto"></div>
+        {% if user.rol == 'admin' %}
+        <div style="padding:.75rem 1rem;border-top:1px solid var(--gray-200);display:flex;justify-content:flex-end">
+          <button class="btn btn-primary btn-sm" id="btnGuardarAreasProducto" onclick="guardarAreasEtapaProducto()">Guardar áreas</button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div style="padding:1rem 1.5rem;border-top:1px solid var(--gray-200);display:flex;justify-content:flex-end">
+      <button class="btn btn-secondary btn-sm" onclick="cerrarModalEtapas()">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal editar etapa del producto ───────────────────────────────────── -->
+<div class="modal-overlay" id="modalEtapaEdit">
+  <div style="background:#fff;border-radius:12px;padding:2rem;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <h3 style="margin-bottom:1.25rem;font-size:1.05rem">Etapa</h3>
+    <input type="hidden" id="epEditId">
+    <div class="form-group">
+      <label>Nombre *</label>
+      <select id="epNombre">
+        <option value="">— Seleccioná —</option>
+      </select>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem">
+      <button class="btn btn-secondary" onclick="document.getElementById('modalEtapaEdit').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEpEdit" onclick="guardarEditEtapaProducto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ep-row { display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-bottom:1px solid var(--gray-100);font-size:.875rem;cursor:pointer; }
+  .ep-row:hover { background:#f0f9ff; }
+  .ep-row.ep-selected { background:#dbeafe; }
+  .ep-row.ep-inactivo { opacity:.55; }
+  .ep-num { width:1.6rem;height:1.6rem;border-radius:50%;background:var(--primary);color:#fff;font-size:.75rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+  .ep-row.ep-inactivo .ep-num { background:var(--gray-300); }
+</style>
+
 {% include "partials/import_modal.html" %}
 </body>
 </html>

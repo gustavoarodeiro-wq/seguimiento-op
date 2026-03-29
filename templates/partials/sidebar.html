@@ -34,6 +34,9 @@
   <a href="/graneles" class="sidebar-link {% if request.url.path == '/graneles' %}active{% endif %}">
     <span class="icon">🧪</span> Graneles
   </a>
+  <a href="/etapas-maestro" class="sidebar-link {% if request.url.path == '/etapas-maestro' %}active{% endif %}">
+    <span class="icon">🏭</span> Etapas / Áreas
+  </a>
 
   {% if user.permisos.gestionar_usuarios or user.permisos.ver_alertas %}
   <div class="sidebar-section">Administración</div>

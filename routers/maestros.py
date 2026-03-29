@@ -541,7 +541,8 @@ def _ff_dict(f: FormaFarmaceutica, db: Session):
 
 def _etapa_dict(e: EtapaProduccion):
     return {"id": e.id, "forma_farmaceutica_id": e.forma_farmaceutica_id,
-            "orden": e.orden, "nombre": e.nombre, "activo": e.activo}
+            "orden": e.orden, "nombre": e.nombre, "activo": e.activo,
+            "n_areas": len(e.areas)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

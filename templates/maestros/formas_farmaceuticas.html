@@ -7,48 +7,16 @@
   {% include "partials/maestro_styles.html" %}
   <style>
     tr.ff-row:hover td { background:#f0f9ff; cursor:pointer; }
-
     .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
                      z-index:200; align-items:center; justify-content:center; padding:1rem; }
     .modal-overlay.open { display:flex; }
-
-    .modal-detalle { background:#fff; border-radius:12px; width:100%; max-width:640px;
-                     max-height:90vh; display:flex; flex-direction:column;
-                     box-shadow:0 20px 60px rgba(0,0,0,.2); }
-    .modal-detalle-header { padding:1.25rem 1.5rem; border-bottom:1px solid var(--gray-200);
-                             display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
-    .modal-detalle-header h3 { margin:0; font-size:1.05rem; flex:1; min-width:0; }
-    .modal-detalle-body { flex:1; overflow-y:auto; }
-    .modal-detalle-footer { padding:1rem 1.5rem; border-top:1px solid var(--gray-200);
-                             display:flex; justify-content:space-between; align-items:center;
-                             gap:.5rem; flex-wrap:wrap; }
-
-    .banda-edicion { padding:.6rem 1.5rem; background:#fffbeb; border-bottom:2px solid #f59e0b;
-                     display:none; align-items:center; gap:.75rem;
-                     font-size:.85rem; font-weight:600; color:#92400e; }
-    .banda-edicion.visible { display:flex; }
-
     .modal-sm { background:#fff; border-radius:12px; padding:2rem; width:100%;
-                max-width:440px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+                max-width:480px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
     .modal-sm h3 { margin-bottom:1.25rem; font-size:1.05rem; }
     .modal-footer { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
-
-    .etapa-item { display:flex; align-items:center; gap:.6rem; padding:.65rem 1.5rem;
-                  border-bottom:1px solid var(--gray-100); font-size:.875rem; }
-    .etapa-item:last-child { border-bottom:none; }
-    .etapa-num { width:1.6rem; height:1.6rem; border-radius:50%; background:var(--primary);
-                 color:#fff; font-size:.75rem; font-weight:700; display:flex; align-items:center;
-                 justify-content:center; flex-shrink:0; }
-    .etapa-item.inactiva .etapa-num { background:var(--gray-300); }
-    .etapa-item.inactiva { opacity:.55; }
-    .ff-tabs { display:flex; border-bottom:1px solid var(--gray-200); padding:0 1.5rem; background:#fff; }
-    .ff-tab { padding:.6rem 1rem; font-size:.875rem; font-weight:600; color:var(--gray-400);
-              cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
-    .ff-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
-    .producto-item { display:flex; align-items:center; gap:.75rem; padding:.6rem 1.5rem;
+    .producto-item { display:flex; align-items:center; gap:.75rem; padding:.5rem 0;
                      border-bottom:1px solid var(--gray-100); font-size:.875rem; }
     .producto-item:last-child { border-bottom:none; }
-    .producto-item.inactivo { opacity:.55; }
   </style>
 </head>
 <body>
@@ -60,7 +28,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Formas Farmacéuticas</h1>
-        <p class="page-subtitle">Definición de formas y sus etapas de producción</p>
+        <p class="page-subtitle">Clasificación de productos por forma y unidad de producción</p>
       </div>
       {% if user.rol == 'admin' %}
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -78,7 +46,7 @@
             <tr>
               <th>Nombre</th>
               <th>Unidad</th>
-              <th style="text-align:center">Etapas</th>
+              <th style="text-align:center">Productos</th>
               <th style="text-align:center">Estado</th>
               <th></th>
             </tr>
@@ -90,65 +58,6 @@
       </div>
     </div>
   </main>
-</div>
-
-<!-- ── Modal: detalle de forma farmacéutica ─────────────────────────────── -->
-<div class="modal-overlay" id="modalDetalle">
-  <div class="modal-detalle">
-
-    <!-- Header -->
-    <div class="modal-detalle-header">
-      <div>
-        <div style="font-size:.75rem;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">Forma Farmacéutica</div>
-        <h3 id="detalleTitle">—</h3>
-      </div>
-      <span id="detalleUnidadBadge" style="font-size:.8rem;background:#dbeafe;color:#1e40af;border-radius:99px;padding:.2rem .75rem;font-weight:700"></span>
-      <span id="detalleEstadoBadge"></span>
-      <button onclick="cerrarDetalle()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400);line-height:1">✕</button>
-    </div>
-
-    <!-- Banda edición -->
-    <div class="banda-edicion" id="bandaEdicion">
-      ✏ Modo edición activo — los cambios en etapas se aplican al instante
-    </div>
-
-    <!-- Tabs -->
-    <div class="ff-tabs">
-      <div class="ff-tab active" id="tabEtapas" onclick="switchTab('etapas')">Etapas</div>
-      <div class="ff-tab" id="tabProductos" onclick="switchTab('productos')">Productos <span id="tabProductosBadge"></span></div>
-    </div>
-
-    <!-- Cuerpo: lista de etapas -->
-    <div class="modal-detalle-body" id="detalleBody">
-      <span class="text-muted text-sm" style="padding:1.5rem;display:block">Cargando…</span>
-    </div>
-    <!-- Cuerpo: lista de productos -->
-    <div class="modal-detalle-body" id="detalleBodyProductos" style="display:none">
-      <span class="text-muted text-sm" style="padding:1.5rem;display:block">Cargando…</span>
-    </div>
-
-    <!-- Footer -->
-    <div class="modal-detalle-footer">
-      <!-- Izquierda: acciones sobre la forma -->
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        {% if user.rol == 'admin' %}
-        <button class="btn btn-secondary btn-sm" onclick="abrirModalFFEdit()">Editar forma</button>
-        <button class="btn btn-secondary btn-sm" id="btnToggleFF" onclick="toggleFFDetalle()"></button>
-        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
-                onclick="eliminarFFDetalle()">Eliminar</button>
-        {% endif %}
-      </div>
-      <!-- Derecha: modo vista / edición -->
-      <div style="display:flex;gap:.5rem;align-items:center">
-        {% if user.rol == 'admin' %}
-        <button class="btn btn-primary btn-sm" id="btnModoEdicion" onclick="activarEdicion()">✏ Modificar etapas</button>
-        <button class="btn btn-primary btn-sm" id="btnAgregarEtapa" style="display:none" onclick="abrirModalEtapa()">+ Agregar etapa</button>
-        <button class="btn btn-secondary btn-sm" id="btnCancelarEdicion" style="display:none" onclick="cancelarEdicion()">Cerrar edición</button>
-        {% endif %}
-      </div>
-    </div>
-
-  </div>
 </div>
 
 <!-- ── Modal: crear / editar forma farmacéutica ──────────────────────────── -->
@@ -176,39 +85,47 @@
   </div>
 </div>
 
-<!-- ── Modal: crear / editar etapa ───────────────────────────────────────── -->
-<div class="modal-overlay" id="modalEtapa">
-  <div class="modal-sm">
-    <h3 id="modalEtapaTitle">Nueva Etapa</h3>
-    <input type="hidden" id="etapaEditId">
-    <div class="form-group">
-      <label>Nombre de la etapa *</label>
-      <input type="text" id="etapaNombre" placeholder="ej: Granulación, Compresión, Recubrimiento…">
+<!-- ── Modal: detalle de forma (productos asignados) ─────────────────────── -->
+<div class="modal-overlay" id="modalDetalle">
+  <div class="modal-sm" style="max-width:560px">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem">
+      <div style="flex:1">
+        <div style="font-size:.75rem;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">Forma Farmacéutica</div>
+        <h3 style="margin:0;font-size:1.05rem" id="detalleTitle">—</h3>
+      </div>
+      <span id="detalleUnidadBadge" style="font-size:.8rem;background:#dbeafe;color:#1e40af;border-radius:99px;padding:.2rem .75rem;font-weight:700"></span>
+      <span id="detalleEstadoBadge"></span>
+      <button onclick="cerrarDetalle()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
     </div>
-    <div class="form-group">
-      <label>Orden</label>
-      <input type="number" id="etapaOrden" min="1" placeholder="Se asigna automáticamente">
+
+    <div style="font-size:.8rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">
+      Productos asignados <span id="detalleProdCount" style="font-weight:400;color:var(--gray-400)"></span>
     </div>
-    <div id="alertEtapa" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="cerrarModalEtapa()">Cancelar</button>
-      <button class="btn btn-primary" id="btnGuardarEtapa" onclick="guardarEtapa()">Guardar</button>
+    <div id="detalleProductos" style="max-height:280px;overflow-y:auto;margin-bottom:1rem">
+      <span class="text-muted text-sm">Cargando…</span>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;padding-top:1rem;border-top:1px solid var(--gray-200)">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        {% if user.rol == 'admin' %}
+        <button class="btn btn-secondary btn-sm" onclick="editarFF()">Editar</button>
+        <button class="btn btn-secondary btn-sm" id="btnToggleFF" onclick="toggleFF()"></button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" onclick="eliminarFF()">Eliminar</button>
+        {% endif %}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="cerrarDetalle()">Cerrar</button>
     </div>
   </div>
 </div>
 
 <script>
   function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
-
   const isAdmin = {{ 'true' if user.rol == 'admin' else 'false' }};
   let formas = [];
   let _ffActual = null;
-  let _modoEdicion = false;
-  let _tabActual = 'etapas';
 
   document.addEventListener('DOMContentLoaded', cargarFF);
 
-  // ── Carga y render de tabla ────────────────────────────────────────────────
   async function cargarFF() {
     const res = await fetch('/api/formas-farmaceuticas');
     formas = await res.json();
@@ -226,84 +143,19 @@
         <td style="font-weight:600">${esc(f.nombre)}</td>
         <td class="text-muted">${fmtUnidad(f.unidad ?? '—')}</td>
         <td style="text-align:center">
-          <span class="badge" style="background:#dbeafe;color:#1e40af">${f.n_etapas}</span>
+          <span class="badge" style="background:#dbeafe;color:#1e40af">${f.total_productos ?? 0}</span>
         </td>
         <td style="text-align:center">
           <span class="badge badge-${f.activo ? 'activo' : 'inactivo'}">${f.activo ? 'Activo' : 'Inactivo'}</span>
         </td>
-        <td style="text-align:right;color:var(--gray-400);font-size:.8rem;white-space:nowrap">Ver detalle →</td>
+        <td style="text-align:right;color:var(--gray-400);font-size:.8rem;white-space:nowrap">Ver →</td>
       </tr>
     `).join('');
   }
 
-  // ── Abrir / cerrar modal detalle ───────────────────────────────────────────
   async function abrirDetalle(id) {
     _ffActual = formas.find(f => f.id === id);
     if (!_ffActual) return;
-    _modoEdicion = false;
-    _tabActual = 'etapas';
-    _actualizarUI();
-    _sincronizarHeader();
-    document.getElementById('detalleBody').innerHTML =
-      '<span class="text-muted text-sm" style="padding:1.5rem;display:block">Cargando…</span>';
-    document.getElementById('detalleBodyProductos').innerHTML =
-      '<span class="text-muted text-sm" style="padding:1.5rem;display:block">Cargando…</span>';
-    document.getElementById('detalleBody').style.display = '';
-    document.getElementById('detalleBodyProductos').style.display = 'none';
-    document.getElementById('tabEtapas').classList.add('active');
-    document.getElementById('tabProductos').classList.remove('active');
-    document.getElementById('modalDetalle').classList.add('open');
-    await cargarEtapas();
-    cargarProductosFF(); // no await, carga en paralelo
-  }
-
-  function switchTab(tab) {
-    _tabActual = tab;
-    document.getElementById('tabEtapas').classList.toggle('active', tab === 'etapas');
-    document.getElementById('tabProductos').classList.toggle('active', tab === 'productos');
-    document.getElementById('detalleBody').style.display = tab === 'etapas' ? '' : 'none';
-    document.getElementById('detalleBodyProductos').style.display = tab === 'productos' ? '' : 'none';
-    // Ocultar banda y botones de edición cuando se ve productos
-    document.getElementById('bandaEdicion').classList.toggle('visible', _modoEdicion && tab === 'etapas');
-    const btnModo     = document.getElementById('btnModoEdicion');
-    const btnAgregar  = document.getElementById('btnAgregarEtapa');
-    const btnCancelar = document.getElementById('btnCancelarEdicion');
-    if (btnModo)     btnModo.style.display     = (tab === 'etapas' && !_modoEdicion) ? '' : 'none';
-    if (btnAgregar)  btnAgregar.style.display  = (tab === 'etapas' && _modoEdicion)  ? '' : 'none';
-    if (btnCancelar) btnCancelar.style.display = (tab === 'etapas' && _modoEdicion)  ? '' : 'none';
-  }
-
-  async function cargarProductosFF() {
-    if (!_ffActual) return;
-    const res = await fetch(`/api/formas-farmaceuticas/${_ffActual.id}/productos`);
-    const productos = await res.json();
-    const badge = document.getElementById('tabProductosBadge');
-    badge.textContent = productos.length ? `(${productos.length})` : '';
-    const body = document.getElementById('detalleBodyProductos');
-    if (!productos.length) {
-      body.innerHTML = '<p class="text-muted text-sm" style="padding:1.5rem">Sin productos asignados.</p>';
-      return;
-    }
-    body.innerHTML = productos.map(p => `
-      <div class="producto-item ${p.activo ? '' : 'inactivo'}">
-        <span style="font-family:monospace;font-size:.8rem;background:var(--gray-100);padding:.15rem .5rem;border-radius:4px;flex-shrink:0">${esc(p.codigo)}</span>
-        <span style="flex:1">${esc(p.descripcion)}</span>
-        ${!p.activo ? '<span class="badge badge-inactivo" style="font-size:.7rem">Inactivo</span>' : ''}
-        <a href="/formulas?codigo=${encodeURIComponent(p.codigo)}" class="btn btn-secondary btn-sm" target="_blank" style="white-space:nowrap">Ver fórmula →</a>
-      </div>
-    `).join('');
-  }
-
-  function cerrarDetalle() {
-    if (_modoEdicion) {
-      if (!confirm('Estás en modo edición. ¿Cerrás?')) return;
-    }
-    _modoEdicion = false;
-    document.getElementById('modalDetalle').classList.remove('open');
-    _ffActual = null;
-  }
-
-  function _sincronizarHeader() {
     document.getElementById('detalleTitle').textContent = _ffActual.nombre;
     document.getElementById('detalleUnidadBadge').textContent = fmtUnidad(_ffActual.unidad ?? '—');
     const badge = document.getElementById('detalleEstadoBadge');
@@ -311,62 +163,43 @@
     badge.textContent = _ffActual.activo ? 'Activo' : 'Inactivo';
     const btnToggle = document.getElementById('btnToggleFF');
     if (btnToggle) btnToggle.textContent = _ffActual.activo ? 'Desactivar' : 'Activar';
-  }
+    document.getElementById('detalleProductos').innerHTML = '<span class="text-muted text-sm">Cargando…</span>';
+    document.getElementById('modalDetalle').classList.add('open');
 
-  function _actualizarUI() {
-    const enEtapas = _tabActual === 'etapas';
-    document.getElementById('bandaEdicion').classList.toggle('visible', _modoEdicion && enEtapas);
-    const btnModo     = document.getElementById('btnModoEdicion');
-    const btnAgregar  = document.getElementById('btnAgregarEtapa');
-    const btnCancelar = document.getElementById('btnCancelarEdicion');
-    if (btnModo)     btnModo.style.display     = (enEtapas && !_modoEdicion) ? '' : 'none';
-    if (btnAgregar)  btnAgregar.style.display  = (enEtapas && _modoEdicion)  ? '' : 'none';
-    if (btnCancelar) btnCancelar.style.display = (enEtapas && _modoEdicion)  ? '' : 'none';
-  }
-
-  function activarEdicion() { _modoEdicion = true; _actualizarUI(); cargarEtapas(); }
-  function cancelarEdicion() { _modoEdicion = false; _actualizarUI(); cargarEtapas(); }
-
-  // ── Render etapas ──────────────────────────────────────────────────────────
-  async function cargarEtapas() {
-    const body = document.getElementById('detalleBody');
-    const res = await fetch(`/api/formas-farmaceuticas/${_ffActual.id}/etapas`);
-    const etapas = await res.json();
-
-    if (!etapas.length) {
-      body.innerHTML = '<p class="text-muted text-sm" style="padding:1.5rem">Sin etapas definidas.</p>';
+    const res = await fetch(`/api/formas-farmaceuticas/${id}/productos`);
+    const productos = await res.json();
+    document.getElementById('detalleProdCount').textContent = `(${productos.length})`;
+    const cont = document.getElementById('detalleProductos');
+    if (!productos.length) {
+      cont.innerHTML = '<p class="text-muted text-sm">Sin productos asignados.</p>';
       return;
     }
-
-    body.innerHTML = etapas.map(e => `
-      <div class="etapa-item ${e.activo ? '' : 'inactiva'}" id="etapa-row-${e.id}">
-        <span class="etapa-num">${e.orden}</span>
-        <span style="flex:1">${esc(e.nombre)}</span>
-        ${_modoEdicion && isAdmin ? `
-          <button class="btn btn-secondary btn-sm" onclick='abrirModalEtapa(${JSON.stringify(e)})'>Editar</button>
-          <button class="btn btn-secondary btn-sm" onclick="toggleEtapa(${e.id},this)">${e.activo ? 'Desactivar' : 'Activar'}</button>
-        ` : ''}
+    cont.innerHTML = productos.map(p => `
+      <div class="producto-item ${p.activo ? '' : 'inactivo'}">
+        <span style="font-family:monospace;font-size:.8rem;background:var(--gray-100);padding:.15rem .5rem;border-radius:4px;flex-shrink:0">${esc(p.codigo)}</span>
+        <span style="flex:1">${esc(p.descripcion)}</span>
+        ${!p.activo ? '<span class="badge badge-inactivo" style="font-size:.7rem">Inactivo</span>' : ''}
       </div>
     `).join('');
-
-    // Actualizar contador en tabla principal
-    const f = formas.find(x => x.id === _ffActual.id);
-    if (f) f.n_etapas = etapas.length;
   }
 
-  // ── Editar la forma farmacéutica (nombre, unidad) ─────────────────────────
+  function cerrarDetalle() {
+    document.getElementById('modalDetalle').classList.remove('open');
+    _ffActual = null;
+  }
+
   function abrirModalFF(item = null) {
     document.getElementById('modalFFTitle').textContent = item ? 'Editar Forma' : 'Nueva Forma Farmacéutica';
-    document.getElementById('ffEditId').value   = item?.id ?? '';
-    document.getElementById('ffNombre').value   = item?.nombre ?? '';
-    document.getElementById('ffUnidad').value   = item?.unidad ?? '';
+    document.getElementById('ffEditId').value  = item?.id ?? '';
+    document.getElementById('ffNombre').value  = item?.nombre ?? '';
+    document.getElementById('ffUnidad').value  = item?.unidad ?? '';
     document.getElementById('alertFF').style.display = 'none';
     document.getElementById('modalFF').classList.add('open');
     setTimeout(() => document.getElementById('ffNombre').focus(), 50);
   }
 
-  function abrirModalFFEdit() { abrirModalFF(_ffActual); }
-  function cerrarModalFF()    { document.getElementById('modalFF').classList.remove('open'); }
+  function editarFF()    { abrirModalFF(_ffActual); }
+  function cerrarModalFF() { document.getElementById('modalFF').classList.remove('open'); }
 
   async function guardarFF() {
     const id     = document.getElementById('ffEditId').value;
@@ -374,8 +207,7 @@
     const unidad = document.getElementById('ffUnidad').value;
     if (!nombre) { showAlert('alertFF', 'El nombre es obligatorio.'); return; }
     if (!unidad) { showAlert('alertFF', 'La unidad es obligatoria.'); return; }
-    const accion = id ? `guardar cambios en "${nombre}"` : `crear la forma "${nombre}"`;
-    if (!confirm(`¿Confirmás ${accion}?`)) return;
+    if (!confirm(`¿Confirmás ${id ? 'guardar cambios en' : 'crear'} "${nombre}"?`)) return;
     const btn = document.getElementById('btnGuardarFF');
     btn.disabled = true;
     const res = await fetch(id ? `/api/formas-farmaceuticas/${id}` : '/api/formas-farmaceuticas', {
@@ -387,10 +219,9 @@
     if (res.ok) {
       cerrarModalFF();
       await cargarFF();
-      // Si estaba abierto el detalle, actualizar header
       if (_ffActual && _ffActual.id == id) {
         _ffActual = formas.find(f => f.id == id);
-        if (_ffActual) _sincronizarHeader();
+        if (_ffActual) abrirDetalle(_ffActual.id);
       }
     } else {
       const err = await res.json();
@@ -398,81 +229,30 @@
     }
   }
 
-  // ── Activar / Desactivar forma ────────────────────────────────────────────
-  async function toggleFFDetalle() {
+  async function toggleFF() {
     if (!_ffActual) return;
-    const accion = _ffActual.activo ? 'desactivar' : 'activar';
-    if (!confirm(`¿Confirmás ${accion} la forma "${_ffActual.nombre}"?`)) return;
+    if (!confirm(`¿${_ffActual.activo ? 'Desactivar' : 'Activar'} "${_ffActual.nombre}"?`)) return;
     const btn = document.getElementById('btnToggleFF');
     btn.disabled = true;
     await fetch(`/api/formas-farmaceuticas/${_ffActual.id}/toggle`, { method: 'PATCH' });
     btn.disabled = false;
     await cargarFF();
     _ffActual = formas.find(f => f.id === _ffActual.id);
-    if (_ffActual) _sincronizarHeader();
+    if (_ffActual) abrirDetalle(_ffActual.id);
   }
 
-  // ── Eliminar forma ────────────────────────────────────────────────────────
-  async function eliminarFFDetalle() {
+  async function eliminarFF() {
     if (!_ffActual) return;
-    if (_ffActual.total_productos > 0) {
-      alert(`No se puede eliminar "${_ffActual.nombre}" porque está asignada a ${_ffActual.total_productos} producto(s).`);
+    if ((_ffActual.total_productos ?? 0) > 0) {
+      alert(`No se puede eliminar: tiene ${_ffActual.total_productos} producto(s) asignado(s).`);
       return;
     }
-    if (!confirm(`¿Eliminás la forma farmacéutica "${_ffActual.nombre}"? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminás "${_ffActual.nombre}"? Esta acción no se puede deshacer.`)) return;
     const res = await fetch(`/api/formas-farmaceuticas/${_ffActual.id}`, { method: 'DELETE' });
-    if (res.ok) {
-      _modoEdicion = false;
-      document.getElementById('modalDetalle').classList.remove('open');
-      _ffActual = null;
-      await cargarFF();
-    } else {
-      const err = await res.json();
-      alert(err.detail ?? 'Error al eliminar.');
-    }
+    if (res.ok) { cerrarDetalle(); await cargarFF(); }
+    else { const err = await res.json(); alert(err.detail ?? 'Error al eliminar.'); }
   }
 
-  // ── Etapas ────────────────────────────────────────────────────────────────
-  function abrirModalEtapa(item = null) {
-    document.getElementById('modalEtapaTitle').textContent = item ? 'Editar Etapa' : 'Nueva Etapa';
-    document.getElementById('etapaEditId').value  = item?.id ?? '';
-    document.getElementById('etapaNombre').value  = item?.nombre ?? '';
-    document.getElementById('etapaOrden').value   = item?.orden ?? '';
-    document.getElementById('alertEtapa').style.display = 'none';
-    document.getElementById('modalEtapa').classList.add('open');
-    setTimeout(() => document.getElementById('etapaNombre').focus(), 50);
-  }
-
-  function cerrarModalEtapa() { document.getElementById('modalEtapa').classList.remove('open'); }
-
-  async function guardarEtapa() {
-    const id     = document.getElementById('etapaEditId').value;
-    const nombre = document.getElementById('etapaNombre').value.trim();
-    const orden  = document.getElementById('etapaOrden').value;
-    if (!nombre) { showAlert('alertEtapa', 'El nombre es obligatorio.'); return; }
-    const body = { nombre };
-    if (orden) body.orden = parseInt(orden);
-    const btn = document.getElementById('btnGuardarEtapa');
-    btn.disabled = true;
-    const url = id ? `/api/etapas/${id}` : `/api/formas-farmaceuticas/${_ffActual.id}/etapas`;
-    const res = await fetch(url, {
-      method: id ? 'PUT' : 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
-    btn.disabled = false;
-    if (res.ok) { cerrarModalEtapa(); await cargarEtapas(); }
-    else { const err = await res.json(); showAlert('alertEtapa', err.detail ?? 'Error.'); }
-  }
-
-  async function toggleEtapa(id, btn) {
-    btn.disabled = true;
-    await fetch(`/api/etapas/${id}/toggle`, { method: 'PATCH' });
-    btn.disabled = false;
-    await cargarEtapas();
-  }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
   function showAlert(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.style.display = ''; }
   function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -481,7 +261,6 @@
       if (e.target !== el) return;
       if (el.id === 'modalDetalle') cerrarDetalle();
       else if (el.id === 'modalFF') cerrarModalFF();
-      else if (el.id === 'modalEtapa') cerrarModalEtapa();
     })
   );
 </script>

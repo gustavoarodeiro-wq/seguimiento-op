@@ -16,6 +16,7 @@ from routers.formulas import router as formulas_router
 from routers.graneles import router as graneles_router
 from routers.alertas import router as alertas_router
 from routers.backup import router as backup_router, start_scheduler
+from routers.etapas_maestro import router as etapas_maestro_router
 
 # Crear tablas e inicializar datos al arrancar
 Base.metadata.create_all(bind=engine)
@@ -59,6 +60,7 @@ app.include_router(formulas_router)
 app.include_router(graneles_router)
 app.include_router(alertas_router)
 app.include_router(backup_router)
+app.include_router(etapas_maestro_router)
 
 # Arrancar hilo de backup automático
 start_scheduler()
@@ -119,6 +121,14 @@ async def page_graneles(request: Request):
     if redir:
         return redir
     return templates.TemplateResponse(request, "maestros/graneles.html", {"user": user})
+
+
+@app.get("/etapas-maestro", response_class=HTMLResponse)
+async def page_etapas_maestro(request: Request):
+    user, redir = _user_or_redirect(request)
+    if redir:
+        return redir
+    return templates.TemplateResponse(request, "maestros/etapas_maestro.html", {"user": user})
 
 
 @app.get("/faltantes", response_class=HTMLResponse)

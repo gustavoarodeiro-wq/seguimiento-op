@@ -1,6 +1,6 @@
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean,
-    DateTime, Date, Text, Enum, ForeignKey
+    DateTime, Date, Text, Enum, ForeignKey, Table
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
@@ -81,6 +81,21 @@ class FormaFarmaceutica(Base):
     etapas = relationship("EtapaProduccion", back_populates="forma_farmaceutica")
 
 
+etapa_produccion_area = Table(
+    "etapa_produccion_area",
+    Base.metadata,
+    Column("etapa_produccion_id", Integer, ForeignKey("etapas_produccion.id"), primary_key=True),
+    Column("area_produccion_id",  Integer, ForeignKey("areas_produccion.id"),  primary_key=True),
+)
+
+etapa_producto_area = Table(
+    "etapa_producto_area",
+    Base.metadata,
+    Column("etapa_producto_id",  Integer, ForeignKey("etapas_producto.id"),     primary_key=True),
+    Column("area_produccion_id", Integer, ForeignKey("areas_produccion.id"),    primary_key=True),
+)
+
+
 class EtapaProduccion(Base):
     __tablename__ = "etapas_produccion"
 
@@ -91,6 +106,20 @@ class EtapaProduccion(Base):
     activo = Column(Boolean, default=True, nullable=False)
 
     forma_farmaceutica = relationship("FormaFarmaceutica", back_populates="etapas")
+    areas = relationship("AreaProduccion", secondary=etapa_produccion_area)
+
+
+class EtapaProducto(Base):
+    __tablename__ = "etapas_producto"
+
+    id = Column(Integer, primary_key=True, index=True)
+    producto_id = Column(Integer, ForeignKey("productos_terminados.id"), nullable=False)
+    orden = Column(Integer, nullable=False)
+    nombre = Column(String(150), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+
+    producto = relationship("ProductoTerminado", back_populates="etapas")
+    areas = relationship("AreaProduccion", secondary=etapa_producto_area)
 
 
 class Granel(Base):
@@ -125,6 +154,7 @@ class ProductoTerminado(Base):
 
     granel = relationship("Granel", back_populates="productos")
     forma_farmaceutica_obj = relationship("FormaFarmaceutica")
+    etapas = relationship("EtapaProducto", back_populates="producto", cascade="all, delete-orphan")
 
 
 class MateriaPrima(Base):
@@ -263,6 +293,39 @@ class EtapaOrden(Base):
 
     etapa = relationship("EtapaProduccion")
     usuario_inicio = relationship("Usuario", foreign_keys=[usuario_inicio_id])
+
+
+class EtapaMaestro(Base):
+    __tablename__ = "etapas_maestro"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(150), unique=True, nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+
+    areas = relationship("AreaProduccion", back_populates="etapa", cascade="all, delete-orphan")
+
+
+class AreaProduccion(Base):
+    __tablename__ = "areas_produccion"
+
+    id = Column(Integer, primary_key=True, index=True)
+    etapa_id = Column(Integer, ForeignKey("etapas_maestro.id"), nullable=False)
+    nombre = Column(String(150), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+
+    etapa = relationship("EtapaMaestro", back_populates="areas")
+    equipos = relationship("EquipoProduccion", back_populates="area", cascade="all, delete-orphan")
+
+
+class EquipoProduccion(Base):
+    __tablename__ = "equipos_produccion"
+
+    id = Column(Integer, primary_key=True, index=True)
+    area_id = Column(Integer, ForeignKey("areas_produccion.id"), nullable=False)
+    nombre = Column(String(150), nullable=False)
+    activo = Column(Boolean, default=True, nullable=False)
+
+    area = relationship("AreaProduccion", back_populates="equipos")
 
 
 class AlertaConfig(Base):

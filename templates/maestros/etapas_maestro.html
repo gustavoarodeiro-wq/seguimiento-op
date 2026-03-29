@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Etapas / Áreas / Equipos — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  {% include "partials/maestro_styles.html" %}
+  <style>
+    tr.etapa-row:hover td { background:#f0f9ff; cursor:pointer; }
+
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+                     z-index:200; align-items:center; justify-content:center; padding:1rem; }
+    .modal-overlay.open { display:flex; }
+
+    /* Modal de detalle (3 columnas: etapa info + áreas + equipos) */
+    .modal-detalle { background:#fff; border-radius:12px; width:100%; max-width:860px;
+                     max-height:90vh; display:flex; flex-direction:column;
+                     box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .modal-detalle-header { padding:1.25rem 1.5rem; border-bottom:1px solid var(--gray-200);
+                             display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+    .modal-detalle-header h3 { margin:0; font-size:1.05rem; flex:1; }
+    .modal-detalle-body { flex:1; overflow:hidden; display:flex; min-height:0; }
+
+    /* Paneles */
+    .panel { display:flex; flex-direction:column; border-right:1px solid var(--gray-200); min-width:0; }
+    .panel:last-child { border-right:none; }
+    .panel-areas  { flex:1; }
+    .panel-equipos { flex:1; }
+    .panel-header { padding:.75rem 1rem; background:var(--gray-50); border-bottom:1px solid var(--gray-200);
+                    display:flex; align-items:center; justify-content:space-between; gap:.5rem; flex-shrink:0; }
+    .panel-header-title { font-size:.8rem; font-weight:700; color:var(--gray-500);
+                          text-transform:uppercase; letter-spacing:.05em; }
+    .panel-list { flex:1; overflow-y:auto; }
+
+    .item-row { display:flex; align-items:center; gap:.5rem; padding:.6rem 1rem;
+                border-bottom:1px solid var(--gray-100); font-size:.875rem; cursor:pointer; }
+    .item-row:last-child { border-bottom:none; }
+    .item-row:hover { background:#f0f9ff; }
+    .item-row.selected { background:#dbeafe; }
+    .item-row.inactivo { opacity:.55; }
+    .item-nombre { flex:1; }
+    .item-badge { font-size:.7rem; background:var(--gray-100); color:var(--gray-500);
+                  border-radius:99px; padding:.1rem .5rem; flex-shrink:0; }
+
+    .panel-empty { padding:1.5rem 1rem; color:var(--gray-400); font-size:.875rem; text-align:center; }
+
+    .modal-detalle-footer { padding:1rem 1.5rem; border-top:1px solid var(--gray-200);
+                             display:flex; justify-content:space-between; align-items:center; gap:.5rem; flex-wrap:wrap; }
+
+    /* Modal pequeño */
+    .modal-sm { background:#fff; border-radius:12px; padding:2rem; width:100%;
+                max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .modal-sm h3 { margin-bottom:1.25rem; font-size:1.05rem; }
+    .modal-footer { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Etapas / Áreas / Equipos</h1>
+        <p class="page-subtitle">Definición de etapas de producción, áreas y equipamiento</p>
+      </div>
+      {% if user.rol == 'admin' %}
+      <button class="btn btn-primary" onclick="abrirModalEtapa()">+ Nueva etapa</button>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Etapa</th>
+              <th style="text-align:center">Áreas</th>
+              <th style="text-align:center">Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbodyEtapas">
+            <tr><td colspan="4" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Modal detalle: áreas y equipos ────────────────────────────────────── -->
+<div class="modal-overlay" id="modalDetalle">
+  <div class="modal-detalle">
+
+    <div class="modal-detalle-header">
+      <div>
+        <div style="font-size:.75rem;color:var(--gray-400);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem">Etapa</div>
+        <h3 id="detalleTitle">—</h3>
+      </div>
+      <span id="detalleEstadoBadge"></span>
+      <button onclick="cerrarDetalle()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400);line-height:1">✕</button>
+    </div>
+
+    <div class="modal-detalle-body">
+
+      <!-- Panel Áreas -->
+      <div class="panel panel-areas">
+        <div class="panel-header">
+          <span class="panel-header-title">Áreas</span>
+          {% if user.rol == 'admin' %}
+          <button class="btn btn-primary btn-sm" onclick="abrirModalArea()">+ Área</button>
+          {% endif %}
+        </div>
+        <div class="panel-list" id="listaAreas">
+          <div class="panel-empty">Seleccioná una etapa</div>
+        </div>
+      </div>
+
+      <!-- Panel Equipos -->
+      <div class="panel panel-equipos">
+        <div class="panel-header">
+          <span class="panel-header-title" id="equiposPanelTitle">Equipos</span>
+          {% if user.rol == 'admin' %}
+          <button class="btn btn-primary btn-sm" id="btnNuevoEquipo" style="display:none" onclick="abrirModalEquipo()">+ Equipo</button>
+          {% endif %}
+        </div>
+        <div class="panel-list" id="listaEquipos">
+          <div class="panel-empty">Seleccioná un área</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="modal-detalle-footer">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        {% if user.rol == 'admin' %}
+        <button class="btn btn-secondary btn-sm" onclick="editarEtapaActual()">Editar etapa</button>
+        <button class="btn btn-secondary btn-sm" id="btnToggleEtapa" onclick="toggleEtapaActual()"></button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                onclick="eliminarEtapaActual()">Eliminar etapa</button>
+        {% endif %}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="cerrarDetalle()">Cerrar</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Modal: crear/editar etapa ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalEtapa">
+  <div class="modal-sm">
+    <h3 id="modalEtapaTitle">Nueva Etapa</h3>
+    <input type="hidden" id="etapaEditId">
+    <div class="form-group">
+      <label>Nombre *</label>
+      <input type="text" id="etapaNombre" placeholder="ej: Elaboración, Compresión, Envasado…">
+    </div>
+    <div id="alertEtapa" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalEtapa()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEtapa" onclick="guardarEtapa()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: crear/editar área ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalArea">
+  <div class="modal-sm">
+    <h3 id="modalAreaTitle">Nueva Área</h3>
+    <input type="hidden" id="areaEditId">
+    <div class="form-group">
+      <label>Nombre *</label>
+      <input type="text" id="areaNombre" placeholder="ej: Sala de Granulación, Área Estéril…">
+    </div>
+    <div id="alertArea" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalArea()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarArea" onclick="guardarArea()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: crear/editar equipo ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalEquipo">
+  <div class="modal-sm">
+    <h3 id="modalEquipoTitle">Nuevo Equipo</h3>
+    <input type="hidden" id="equipoEditId">
+    <div class="form-group">
+      <label>Nombre *</label>
+      <input type="text" id="equipoNombre" placeholder="ej: Comprimidora 1, Granuladora A…">
+    </div>
+    <div id="alertEquipo" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalEquipo()">Cancelar</button>
+      <button class="btn btn-primary" id="btnGuardarEquipo" onclick="guardarEquipo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const isAdmin = {{ 'true' if user.rol == 'admin' else 'false' }};
+  let etapas = [];
+  let _etapaActual = null;
+  let _areaActual  = null;
+
+  document.addEventListener('DOMContentLoaded', cargarEtapas);
+
+  // ── Tabla principal ────────────────────────────────────────────────────────
+  async function cargarEtapas() {
+    const res = await fetch('/api/etapas-maestro');
+    etapas = await res.json();
+    renderTabla();
+  }
+
+  function renderTabla() {
+    const tbody = document.getElementById('tbodyEtapas');
+    if (!etapas.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin etapas registradas.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = etapas.map(e => `
+      <tr class="etapa-row" onclick="abrirDetalle(${e.id})" style="${e.activo ? '' : 'opacity:.55'}">
+        <td style="font-weight:600">${esc(e.nombre)}</td>
+        <td style="text-align:center">
+          <span class="badge" style="background:#dbeafe;color:#1e40af">${e.n_areas}</span>
+        </td>
+        <td style="text-align:center">
+          <span class="badge badge-${e.activo ? 'activo' : 'inactivo'}">${e.activo ? 'Activo' : 'Inactivo'}</span>
+        </td>
+        <td style="text-align:right;color:var(--gray-400);font-size:.8rem">Ver detalle →</td>
+      </tr>
+    `).join('');
+  }
+
+  // ── Modal detalle ──────────────────────────────────────────────────────────
+  async function abrirDetalle(id) {
+    _etapaActual = etapas.find(e => e.id === id);
+    _areaActual  = null;
+    if (!_etapaActual) return;
+    sincronizarHeader();
+    document.getElementById('listaAreas').innerHTML = '<div class="panel-empty">Cargando…</div>';
+    document.getElementById('listaEquipos').innerHTML = '<div class="panel-empty">Seleccioná un área</div>';
+    document.getElementById('equiposPanelTitle').textContent = 'Equipos';
+    if (isAdmin) document.getElementById('btnNuevoEquipo').style.display = 'none';
+    document.getElementById('modalDetalle').classList.add('open');
+    await cargarAreas();
+  }
+
+  function cerrarDetalle() {
+    document.getElementById('modalDetalle').classList.remove('open');
+    _etapaActual = null;
+    _areaActual  = null;
+  }
+
+  function sincronizarHeader() {
+    document.getElementById('detalleTitle').textContent = _etapaActual.nombre;
+    const badge = document.getElementById('detalleEstadoBadge');
+    badge.className = `badge badge-${_etapaActual.activo ? 'activo' : 'inactivo'}`;
+    badge.textContent = _etapaActual.activo ? 'Activo' : 'Inactivo';
+    const btnToggle = document.getElementById('btnToggleEtapa');
+    if (btnToggle) btnToggle.textContent = _etapaActual.activo ? 'Desactivar' : 'Activar';
+  }
+
+  // ── Áreas ──────────────────────────────────────────────────────────────────
+  async function cargarAreas() {
+    const res = await fetch(`/api/etapas-maestro/${_etapaActual.id}/areas`);
+    const areas = await res.json();
+    const lista = document.getElementById('listaAreas');
+    if (!areas.length) {
+      lista.innerHTML = '<div class="panel-empty">Sin áreas. Agregá una con el botón +</div>';
+      return;
+    }
+    lista.innerHTML = areas.map(a => `
+      <div class="item-row ${a.activo ? '' : 'inactivo'} ${_areaActual?.id === a.id ? 'selected' : ''}"
+           onclick="seleccionarArea(${JSON.stringify(a).replace(/"/g,'&quot;')})">
+        <span class="item-nombre">${esc(a.nombre)}</span>
+        <span class="item-badge">${a.n_equipos} equipo${a.n_equipos !== 1 ? 's' : ''}</span>
+        ${isAdmin ? `
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();abrirModalArea(${JSON.stringify(a).replace(/"/g,'&quot;')})">✎</button>
+          <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toggleArea(${a.id})">${a.activo ? '○' : '●'}</button>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                  onclick="event.stopPropagation();eliminarArea(${a.id})">✕</button>
+        ` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function seleccionarArea(area) {
+    _areaActual = area;
+    await cargarAreas(); // re-render para marcar selected
+    document.getElementById('equiposPanelTitle').textContent = `Equipos — ${area.nombre}`;
+    if (isAdmin) document.getElementById('btnNuevoEquipo').style.display = '';
+    await cargarEquipos();
+  }
+
+  async function toggleArea(id) {
+    await fetch(`/api/areas-produccion/${id}/toggle`, { method: 'PATCH' });
+    await cargarAreas();
+    if (_areaActual?.id === id) await cargarEquipos();
+  }
+
+  async function eliminarArea(id) {
+    if (!confirm('¿Eliminás esta área?')) return;
+    const res = await fetch(`/api/areas-produccion/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      if (_areaActual?.id === id) {
+        _areaActual = null;
+        document.getElementById('listaEquipos').innerHTML = '<div class="panel-empty">Seleccioná un área</div>';
+        document.getElementById('equiposPanelTitle').textContent = 'Equipos';
+        if (isAdmin) document.getElementById('btnNuevoEquipo').style.display = 'none';
+      }
+      await cargarAreas();
+      await cargarEtapas();
+    } else {
+      const err = await res.json();
+      alert(err.detail ?? 'Error al eliminar.');
+    }
+  }
+
+  // ── Equipos ────────────────────────────────────────────────────────────────
+  async function cargarEquipos() {
+    if (!_areaActual) return;
+    const res = await fetch(`/api/areas-produccion/${_areaActual.id}/equipos`);
+    const equipos = await res.json();
+    const lista = document.getElementById('listaEquipos');
+    if (!equipos.length) {
+      lista.innerHTML = '<div class="panel-empty">Sin equipos. Agregá uno con el botón +</div>';
+      return;
+    }
+    lista.innerHTML = equipos.map(e => `
+      <div class="item-row ${e.activo ? '' : 'inactivo'}">
+        <span class="item-nombre">${esc(e.nombre)}</span>
+        ${isAdmin ? `
+          <button class="btn btn-secondary btn-sm" onclick="abrirModalEquipo(${JSON.stringify(e).replace(/"/g,'&quot;')})">✎</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleEquipo(${e.id})">${e.activo ? '○' : '●'}</button>
+          <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                  onclick="eliminarEquipo(${e.id})">✕</button>
+        ` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function toggleEquipo(id) {
+    await fetch(`/api/equipos-produccion/${id}/toggle`, { method: 'PATCH' });
+    await cargarEquipos();
+  }
+
+  async function eliminarEquipo(id) {
+    if (!confirm('¿Eliminás este equipo?')) return;
+    const res = await fetch(`/api/equipos-produccion/${id}`, { method: 'DELETE' });
+    if (res.ok) { await cargarEquipos(); await cargarAreas(); }
+    else { const err = await res.json(); alert(err.detail ?? 'Error al eliminar.'); }
+  }
+
+  // ── Acciones sobre la etapa (footer) ──────────────────────────────────────
+  function editarEtapaActual() { abrirModalEtapa(_etapaActual); }
+
+  async function toggleEtapaActual() {
+    if (!confirm(`¿${_etapaActual.activo ? 'Desactivar' : 'Activar'} la etapa "${_etapaActual.nombre}"?`)) return;
+    const res = await fetch(`/api/etapas-maestro/${_etapaActual.id}/toggle`, { method: 'PATCH' });
+    const data = await res.json();
+    _etapaActual.activo = data.activo;
+    sincronizarHeader();
+    await cargarEtapas();
+  }
+
+  async function eliminarEtapaActual() {
+    if (_etapaActual.n_areas > 0) {
+      alert(`No se puede eliminar: tiene ${_etapaActual.n_areas} área(s) asociada(s).`);
+      return;
+    }
+    if (!confirm(`¿Eliminás la etapa "${_etapaActual.nombre}"?`)) return;
+    const res = await fetch(`/api/etapas-maestro/${_etapaActual.id}`, { method: 'DELETE' });
+    if (res.ok) { cerrarDetalle(); await cargarEtapas(); }
+    else { const err = await res.json(); alert(err.detail ?? 'Error al eliminar.'); }
+  }
+
+  // ── Modales CRUD ───────────────────────────────────────────────────────────
+  function abrirModalEtapa(item = null) {
+    document.getElementById('modalEtapaTitle').textContent = item ? 'Editar Etapa' : 'Nueva Etapa';
+    document.getElementById('etapaEditId').value  = item?.id ?? '';
+    document.getElementById('etapaNombre').value  = item?.nombre ?? '';
+    document.getElementById('alertEtapa').style.display = 'none';
+    document.getElementById('modalEtapa').classList.add('open');
+    setTimeout(() => document.getElementById('etapaNombre').focus(), 50);
+  }
+  function cerrarModalEtapa() { document.getElementById('modalEtapa').classList.remove('open'); }
+
+  async function guardarEtapa() {
+    const id     = document.getElementById('etapaEditId').value;
+    const nombre = document.getElementById('etapaNombre').value.trim();
+    if (!nombre) { showAlert('alertEtapa', 'El nombre es obligatorio.'); return; }
+    const btn = document.getElementById('btnGuardarEtapa');
+    btn.disabled = true;
+    const res = await fetch(id ? `/api/etapas-maestro/${id}` : '/api/etapas-maestro', {
+      method: id ? 'PUT' : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ nombre }),
+    });
+    btn.disabled = false;
+    if (res.ok) {
+      cerrarModalEtapa();
+      await cargarEtapas();
+      if (_etapaActual && _etapaActual.id == id) {
+        _etapaActual = etapas.find(e => e.id == id);
+        if (_etapaActual) sincronizarHeader();
+      }
+    } else {
+      const err = await res.json();
+      showAlert('alertEtapa', err.detail ?? 'Error.');
+    }
+  }
+
+  function abrirModalArea(item = null) {
+    document.getElementById('modalAreaTitle').textContent = item ? 'Editar Área' : 'Nueva Área';
+    document.getElementById('areaEditId').value  = item?.id ?? '';
+    document.getElementById('areaNombre').value  = item?.nombre ?? '';
+    document.getElementById('alertArea').style.display = 'none';
+    document.getElementById('modalArea').classList.add('open');
+    setTimeout(() => document.getElementById('areaNombre').focus(), 50);
+  }
+  function cerrarModalArea() { document.getElementById('modalArea').classList.remove('open'); }
+
+  async function guardarArea() {
+    const id     = document.getElementById('areaEditId').value;
+    const nombre = document.getElementById('areaNombre').value.trim();
+    if (!nombre) { showAlert('alertArea', 'El nombre es obligatorio.'); return; }
+    const btn = document.getElementById('btnGuardarArea');
+    btn.disabled = true;
+    const res = await fetch(
+      id ? `/api/areas-produccion/${id}` : `/api/etapas-maestro/${_etapaActual.id}/areas`,
+      {
+        method: id ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre }),
+      }
+    );
+    btn.disabled = false;
+    if (res.ok) {
+      cerrarModalArea();
+      await cargarAreas();
+      await cargarEtapas();
+    } else {
+      const err = await res.json();
+      showAlert('alertArea', err.detail ?? 'Error.');
+    }
+  }
+
+  function abrirModalEquipo(item = null) {
+    document.getElementById('modalEquipoTitle').textContent = item ? 'Editar Equipo' : 'Nuevo Equipo';
+    document.getElementById('equipoEditId').value  = item?.id ?? '';
+    document.getElementById('equipoNombre').value  = item?.nombre ?? '';
+    document.getElementById('alertEquipo').style.display = 'none';
+    document.getElementById('modalEquipo').classList.add('open');
+    setTimeout(() => document.getElementById('equipoNombre').focus(), 50);
+  }
+  function cerrarModalEquipo() { document.getElementById('modalEquipo').classList.remove('open'); }
+
+  async function guardarEquipo() {
+    const id     = document.getElementById('equipoEditId').value;
+    const nombre = document.getElementById('equipoNombre').value.trim();
+    if (!nombre) { showAlert('alertEquipo', 'El nombre es obligatorio.'); return; }
+    const btn = document.getElementById('btnGuardarEquipo');
+    btn.disabled = true;
+    const res = await fetch(
+      id ? `/api/equipos-produccion/${id}` : `/api/areas-produccion/${_areaActual.id}/equipos`,
+      {
+        method: id ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ nombre }),
+      }
+    );
+    btn.disabled = false;
+    if (res.ok) {
+      cerrarModalEquipo();
+      await cargarEquipos();
+      await cargarAreas();
+    } else {
+      const err = await res.json();
+      showAlert('alertEquipo', err.detail ?? 'Error.');
+    }
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function showAlert(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.style.display = ''; }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => {
+      if (e.target !== el) return;
+      const map = {
+        modalDetalle: cerrarDetalle,
+        modalEtapa:   cerrarModalEtapa,
+        modalArea:    cerrarModalArea,
+        modalEquipo:  cerrarModalEquipo,
+      };
+      map[el.id]?.();
+    })
+  );
+</script>
+</body>
+</html>
