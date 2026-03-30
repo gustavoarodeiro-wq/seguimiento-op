@@ -8,6 +8,9 @@
   <a href="/ordenes" class="sidebar-link {% if '/ordenes' in request.url.path %}active{% endif %}">
     <span class="icon">📦</span> Órdenes
   </a>
+  <a href="/gantt" class="sidebar-link {% if request.url.path == '/gantt' %}active{% endif %}">
+    <span class="icon">📊</span> Gantt
+  </a>
   <a href="/faltantes" class="sidebar-link {% if request.url.path == '/faltantes' %}active{% endif %}">
     <span class="icon">⚠</span> Faltantes
   </a>
@@ -53,6 +56,9 @@
   {% if user.permisos.gestionar_usuarios %}
   <a href="/backup" class="sidebar-link {% if request.url.path == '/backup' %}active{% endif %}">
     <span class="icon">💾</span> Backup
+  </a>
+  <a href="/configuracion" class="sidebar-link {% if request.url.path == '/configuracion' %}active{% endif %}">
+    <span class="icon">⚙</span> Configuración
   </a>
   {% endif %}
   {% endif %}

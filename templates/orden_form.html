@@ -66,10 +66,15 @@
               <input type="date" name="fecha_carga" id="inputFechaCarga" required>
             </div>
 
-            <!-- OP -->
+            <!-- Cantidad -->
             <div class="form-group">
-              <label>N° Orden de Producción (OP)</label>
-              <input type="text" name="op" placeholder="ej: OP-2025-001 (opcional al crear)">
+              <label>Cantidad *</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <input type="number" name="cantidad" id="inputCantidad"
+                       placeholder="0" min="1" step="1" required disabled style="flex:1" inputmode="numeric">
+                <span id="labelUnidad" style="font-weight:700;color:var(--gray-600);min-width:2.5rem"></span>
+              </div>
+              <div id="hintCantidad" class="hint">Seleccioná un producto para habilitar este campo.</div>
             </div>
 
             <!-- Selector de producto -->
@@ -95,38 +100,10 @@
               </div>
             </div>
 
-            <!-- Cantidad -->
-            <div class="form-group">
-              <label>Cantidad *</label>
-              <div style="display:flex;gap:.5rem;align-items:center">
-                <input type="number" name="cantidad" id="inputCantidad"
-                       placeholder="0" min="1" step="1" required disabled style="flex:1" inputmode="numeric">
-                <span id="labelUnidad" style="font-weight:700;color:var(--gray-600);min-width:2.5rem"></span>
-              </div>
-              <div id="hintCantidad" class="hint">Seleccioná un producto para habilitar este campo.</div>
-            </div>
-
-            <!-- Fecha vencimiento -->
-            <div class="form-group">
-              <label>Fecha de Vencimiento</label>
-              <input type="text" name="fecha_vencimiento" placeholder="MM/AAAA (ej: 06/2027)" maxlength="7"
-                     id="inputVencimiento">
-              <div class="hint">Formato: MM/AAAA</div>
-            </div>
-
-            <!-- Lote Granel -->
-            <div class="form-group">
-              <label>Lote Granel</label>
-              <input type="text" name="lote_granel" placeholder="Opcional al crear">
-            </div>
-
-            <!-- Lote PT -->
-            <div class="form-group">
-              <label>Lote Producto Terminado</label>
-              <input type="text" name="lote_pt" placeholder="Opcional al crear">
-            </div>
-
           </div>
+          <p class="hint" style="margin-top:.25rem;color:var(--gray-400)">
+            OP, Lote Granel, Lote PT y Vencimiento se completan al momento de emitir la orden.
+          </p>
 
           <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.75rem">
             <a href="/ordenes" class="btn btn-secondary">Cancelar</a>
@@ -173,13 +150,6 @@
 
   // Fecha de carga: hoy por defecto
   document.getElementById('inputFechaCarga').value = new Date().toISOString().slice(0, 10);
-
-  // Máscara MM/AAAA en campo vencimiento
-  document.getElementById('inputVencimiento').addEventListener('input', function() {
-    let v = this.value.replace(/[^\d]/g, '');
-    if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2,6);
-    this.value = v;
-  });
 
   // ── Selector de producto ───────────────────────────────────────────────────
 

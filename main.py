@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from shared import templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import os
@@ -17,13 +17,20 @@ from routers.graneles import router as graneles_router
 from routers.alertas import router as alertas_router
 from routers.backup import router as backup_router, start_scheduler
 from routers.etapas_maestro import router as etapas_maestro_router
+from routers.configuracion import router as configuracion_router
 
 # Crear tablas e inicializar datos al arrancar
 Base.metadata.create_all(bind=engine)
 from init_db import init as _init_db
 _init_db()
 
-app = FastAPI(title="Seguimiento de Órdenes de Producción", version="1.0.0")
+# Cargar configuración del sistema en caché
+from database import SessionLocal
+from config_cache import load_from_db as _load_config
+with SessionLocal() as _db:
+    _load_config(_db)
+
+app = FastAPI(title="Sistema de Gestión para Laboratorios Farmacéuticos", version="1.2.0")
 
 # ── Middlewares ────────────────────────────────────────────────────────────────
 
@@ -47,8 +54,6 @@ app.add_middleware(
 # ── Archivos estáticos y templates ─────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None  # workaround Python 3.14+
 
 # ── Routers (API) ───────────────────────────────────────────────────────────────
 
@@ -61,6 +66,7 @@ app.include_router(graneles_router)
 app.include_router(alertas_router)
 app.include_router(backup_router)
 app.include_router(etapas_maestro_router)
+app.include_router(configuracion_router)
 
 # Arrancar hilo de backup automático
 start_scheduler()
@@ -236,6 +242,16 @@ async def api_seguimiento(db: Session = Depends(get_db)):
         }
         for o in ordenes
     ]
+
+
+@app.get("/configuracion", response_class=HTMLResponse)
+async def page_configuracion(request: Request):
+    user, redir = _user_or_redirect(request)
+    if redir:
+        return redir
+    if not user.get("permisos", {}).get("accion_admin"):
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse(request, "configuracion.html", {"user": user})
 
 
 @app.get("/health")

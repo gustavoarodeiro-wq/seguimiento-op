@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gantt — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    /* ── Tabs ── */
+    .tabs { display:flex; gap:.25rem; margin-bottom:1.25rem; border-bottom:2px solid var(--gray-200); }
+    .tab-btn { padding:.55rem 1.1rem; background:none; border:none; cursor:pointer;
+               font-size:.875rem; font-weight:600; color:var(--gray-400);
+               border-bottom:2px solid transparent; margin-bottom:-2px; transition:.15s; }
+    .tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+
+    /* ── Gantt page: sin scroll vertical en main-content ── */
+    .gantt-main { overflow:hidden !important; display:flex !important; flex-direction:column !important; }
+
+    /* ── Tablero Kanban ── */
+    #tableroLineas {
+      display:flex;
+      flex-direction:row;
+      gap:.6rem;
+      overflow-x:auto;
+      overflow-y:hidden;
+      align-items:stretch;
+      padding-bottom:.25rem;
+    }
+    .linea-bloque {
+      flex: 1 1 0;
+      min-width:230px;
+      max-width:340px;
+      border-radius:10px;
+      border:1px solid var(--gray-200);
+      background:#fff;
+      box-shadow:0 1px 4px rgba(0,0,0,.05);
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+    .linea-header {
+      padding:.5rem .75rem;
+      font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em;
+      display:flex; align-items:center; gap:.6rem;
+      flex-shrink:0;
+    }
+    .linea-count {
+      font-size:.65rem; font-weight:600; border-radius:99px;
+      padding:.1rem .45rem; background:rgba(0,0,0,.1);
+    }
+    .linea-body {
+      flex:1;
+      overflow-y:auto;
+      display:flex;
+      flex-direction:column;
+      gap:.5rem;
+      padding:.5rem;
+      min-height:40px;
+    }
+    .linea-vacia {
+      padding:.5rem .75rem;
+      font-size:.78rem; color:var(--gray-400); font-style:italic;
+    }
+
+    /* ── Área dentro de columna ── */
+    .area-col {
+      border-radius:7px; border:1px solid var(--gray-200);
+      overflow:hidden; background:var(--gray-50); flex-shrink:0;
+    }
+    .area-col-header {
+      padding:.3rem .6rem; font-size:.68rem; font-weight:800;
+      text-transform:uppercase; letter-spacing:.05em;
+      display:flex; align-items:center; gap:.35rem;
+    }
+    .area-col-body { padding:.35rem; display:flex; flex-direction:column; gap:.3rem; }
+
+    /* ── Tarjeta de orden ── */
+    .orden-card {
+      background:#fff; border-radius:6px; padding:.4rem .55rem;
+      border:1px solid #bfdbfe; font-size:.78rem;
+      transition:.12s; box-shadow:0 1px 2px rgba(0,0,0,.04);
+    }
+    .orden-card:hover { border-color:#93c5fd; background:#f0f9ff; }
+    .orden-card-op   { font-family:monospace; font-weight:800; font-size:.75rem; color:#1e40af; }
+    .orden-card-prod { font-weight:600; font-size:.73rem; color:#1e293b; margin:.1rem 0;
+                       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .orden-card-meta { font-size:.66rem; color:#64748b; margin-top:.15rem; font-family:monospace; }
+    .btn-completar-card {
+      margin-top:.3rem; width:100%; padding:.18rem;
+      font-size:.67rem; font-weight:700; border-radius:4px; cursor:pointer;
+      background:#d1fae5; color:#065f46; border:1px solid #6ee7b7;
+    }
+    .btn-completar-card:hover { background:#a7f3d0; }
+
+    /* ── Vista Por Orden (tabla) ── */
+    .gantt-wrap  { overflow-x:auto; }
+    .gantt-table { border-collapse:collapse; min-width:100%; font-size:.82rem; }
+    .gantt-table th, .gantt-table td { padding:.4rem .65rem; border:1px solid var(--gray-200); white-space:nowrap; }
+    .gantt-table thead th { background:var(--gray-100); font-weight:700; font-size:.74rem;
+                            text-transform:uppercase; letter-spacing:.04em; color:var(--gray-500); }
+    .col-op   { min-width:90px; font-weight:700; }
+    .col-prod { min-width:200px; }
+    .bar-cell { min-width:120px; padding:.3rem .4rem; }
+    .gantt-table .bar-cell { white-space:normal; }
+    .bar      { border-radius:6px; padding:.3rem .55rem; font-size:.76rem; font-weight:600; }
+    .bar-pendiente  { background:#f3f4f6; color:#6b7280; border:1px solid #e5e7eb; }
+    .bar-en_curso   { background:#dbeafe; color:#1e40af; border:1px solid #93c5fd; }
+    .bar-completada { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; }
+    .bar-sub  { font-size:.68rem; font-weight:400; opacity:.8; display:block; margin-top:.1rem; }
+
+    .empty-msg { text-align:center; padding:3rem; color:var(--gray-400); font-size:.9rem; }
+
+    /* ── Modales ── */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+                     z-index:200; align-items:center; justify-content:center; padding:1rem; }
+    .modal-overlay.open { display:flex; }
+    .modal-sm { background:#fff; border-radius:12px; padding:2rem; width:100%;
+                max-width:420px; box-shadow:0 20px 60px rgba(0,0,0,.2); }
+    .modal-sm h3 { margin-bottom:1.25rem; font-size:1.05rem; }
+    .modal-footer { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+  </style>
+</head>
+<body class="page-gantt">
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content gantt-main">
+    <div class="page-header" style="flex-shrink:0">
+      <div>
+        <h1 class="page-title">Gantt de producción</h1>
+        <p class="page-subtitle" id="subtituloGantt">Órdenes activas</p>
+      </div>
+      <button class="btn btn-secondary" onclick="cargar()">↺ Actualizar</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" style="flex-shrink:0">
+      <button class="tab-btn active" id="tab-areas-btn" onclick="switchTab('areas')">🏭 Tablero</button>
+      <button class="tab-btn"        id="tab-orden-btn" onclick="switchTab('orden')">📋 Por Orden</button>
+      <button class="tab-btn"        id="tab-carga-btn" onclick="switchTab('carga')">📊 Carga por Etapa</button>
+    </div>
+
+    <!-- Vista Tablero (kanban) -->
+    <div id="vista-areas" style="display:flex;flex:1;min-height:0;overflow:hidden">
+      <div id="tableroLineas" style="height:100%">
+        <p class="empty-msg">Cargando…</p>
+      </div>
+    </div>
+
+    <!-- Vista Carga por Etapa -->
+    <div id="vista-carga" style="display:none;flex:1;min-height:0;overflow-y:auto">
+      <div id="cargaBody" style="padding:.25rem 0">
+        <p class="empty-msg">Cargando…</p>
+      </div>
+    </div>
+
+    <!-- Vista Por Orden (tabla) -->
+    <div id="vista-orden" style="display:none;flex:1;min-height:0;overflow:hidden;flex-direction:column">
+      <!-- Filtros -->
+      <div style="flex-shrink:0;display:flex;gap:.6rem;align-items:center;padding:.5rem 0;flex-wrap:wrap">
+        <input type="text" id="filtroTexto" placeholder="🔍  OP · producto · lote PT…"
+               oninput="aplicarFiltros()"
+               style="flex:1;min-width:180px;max-width:320px;padding:.4rem .75rem;border:1px solid var(--gray-300);border-radius:8px;font-size:.85rem">
+        <select id="filtroEtapaEstado" onchange="aplicarFiltros()"
+                style="padding:.4rem .65rem;border:1px solid var(--gray-300);border-radius:8px;font-size:.85rem">
+          <option value="">Todas las etapas</option>
+          <option value="pendiente">⏳ Pendientes</option>
+          <option value="en_curso">● En curso</option>
+          <option value="completada">✓ Completadas</option>
+        </select>
+        <span id="filtroConteo" style="font-size:.8rem;color:var(--gray-400)"></span>
+        <button class="btn btn-secondary btn-sm" onclick="limpiarFiltros()">✕ Limpiar</button>
+      </div>
+      <div class="card" style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <div class="gantt-wrap" id="ganttTabla" style="flex:1;overflow:auto">
+          <p class="empty-msg">Cargando…</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: seleccionar área para iniciar -->
+<div class="modal-overlay" id="modalAreaGantt">
+  <div class="modal-sm">
+    <h3 id="modalAreaGanttTitulo">Iniciar etapa — Seleccioná el área</h3>
+    <div class="form-group">
+      <label>Área *</label>
+      <select id="inAreaGantt" style="width:100%">
+        <option value="">— Seleccionar —</option>
+      </select>
+    </div>
+    <div id="alertAreaGantt" class="alert alert-error" style="display:none;margin-top:.5rem"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalAreaGantt')">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfirmarAreaGantt" onclick="confirmarSeleccionAreaGantt()">▶ Iniciar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: estuchado parcial o final (gantt) -->
+<div class="modal-overlay" id="modalEstuchadoGantt">
+  <div class="modal-sm">
+    <h3 id="modalEstuchadoGanttTitulo">Finalizar Estuchado</h3>
+    <p style="font-size:.85rem;color:#64748b;margin:.25rem 0 1.25rem">Seleccioná el tipo de estuchado:</p>
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+      <button class="btn btn-secondary" style="text-align:left;padding:.75rem 1rem"
+              onclick="confirmarCompletarGantt(true)">
+        <div style="font-weight:700;margin-bottom:.2rem">📦 Parcial</div>
+        <div style="font-size:.8rem;color:#64748b">La etapa quedará disponible para el próximo estuchado</div>
+      </button>
+      <button class="btn btn-primary" style="text-align:left;padding:.75rem 1rem"
+              onclick="confirmarCompletarGantt(false)">
+        <div style="font-weight:700;margin-bottom:.2rem">✓ Final</div>
+      </button>
+      <button class="btn" onclick="cerrarModal('modalEstuchadoGantt')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const PUEDE_ETAPAS = {{ 'true' if user.get('permisos', {}).get('manejar_etapas') else 'false' }};
+
+  // ── Grupos de líneas de producción ──────────────────────────────────────────
+  // Cada grupo define qué etapas incluye (por palabras clave en el nombre)
+  const LINEAS = [
+    {
+      label: 'Elaboración',
+      icon:  '⚗️',
+      color: { bg:'#eff6ff', txt:'#1e40af', borde:'#bfdbfe', areaBg:'#dbeafe', areaTxt:'#1e40af' },
+      keys:  ['elabor'],
+    },
+    {
+      label: 'Llenado / Compresión',
+      icon:  '🔩',
+      color: { bg:'#f0fdf4', txt:'#166534', borde:'#bbf7d0', areaBg:'#dcfce7', areaTxt:'#15803d' },
+      keys:  ['llenad', 'compres'],
+    },
+    {
+      label: 'Blisteado / Etiquetado / Revisado',
+      icon:  '🔖',
+      color: { bg:'#fefce8', txt:'#854d0e', borde:'#fde68a', areaBg:'#fef3c7', areaTxt:'#92400e' },
+      keys:  ['blist', 'etique', 'revis'],
+    },
+    {
+      label: 'Estuchado',
+      icon:  '📦',
+      color: { bg:'#faf5ff', txt:'#6b21a8', borde:'#e9d5ff', areaBg:'#f3e8ff', areaTxt:'#7c3aed' },
+      keys:  ['estuch'],
+    },
+  ];
+
+  function etapaEnLinea(nombreEtapa, linea) {
+    const n = nombreEtapa.toLowerCase();
+    return linea.keys.some(k => n.includes(k));
+  }
+
+  let _datos          = [];
+  let _etapaGanttId   = null;
+  let _etapaGanttNom  = null;
+
+  document.addEventListener('DOMContentLoaded', cargar);
+
+  async function cargar() {
+    document.getElementById('tableroLineas').innerHTML = '<p class="empty-msg">Cargando…</p>';
+    document.getElementById('ganttTabla').innerHTML    = '<p class="empty-msg">Cargando…</p>';
+    const res = await fetch('/api/gantt');
+    _datos = await res.json();
+    const total = _datos.length;
+    document.getElementById('subtituloGantt').textContent =
+      total ? `${total} orden${total > 1 ? 'es' : ''} activa${total > 1 ? 's' : ''} en producción` : 'Sin órdenes activas';
+    renderTablero();
+    renderTabla();
+  }
+
+  // ─── Tablero por líneas ──────────────────────────────────────────────────────
+  function renderTablero() {
+    const wrap = document.getElementById('tableroLineas');
+
+    if (!_datos.length) {
+      wrap.innerHTML = '<p class="empty-msg">No hay órdenes activas en producción.</p>';
+      return;
+    }
+
+    // Recolectar solo etapas en_curso
+    const enCurso = [];
+    _datos.forEach(orden => {
+      orden.etapas
+        .filter(e => e.estado === 'en_curso')
+        .forEach(e => enCurso.push({ ...e, orden }));
+    });
+
+    let html = '';
+
+    LINEAS.forEach(linea => {
+      const c = linea.color;
+
+      // Etapas de esta línea que están en curso
+      const items = enCurso.filter(e => etapaEnLinea(e.nombre, linea));
+
+      // Agrupar por área (null → 'Sin área')
+      const porArea = {};
+      items.forEach(item => {
+        const k = item.area || '__sin_area__';
+        if (!porArea[k]) porArea[k] = [];
+        porArea[k].push(item);
+      });
+      const areas = Object.keys(porArea).sort((a, b) => {
+        if (a === '__sin_area__') return 1;
+        if (b === '__sin_area__') return -1;
+        return a.localeCompare(b);
+      });
+
+      let cuerpo = '';
+      if (!areas.length) {
+        cuerpo = `<div class="linea-vacia">Sin actividad</div>`;
+      } else {
+        cuerpo = `<div class="linea-body">` +
+          areas.map(areaKey => {
+            const areaLabel = areaKey === '__sin_area__' ? 'Sin área' : areaKey;
+            const cards = porArea[areaKey].map(item => {
+              const inicio = item.fecha_inicio ? `▶ ${fmtFecha(item.fecha_inicio)}` : '';
+              const lotePT = item.orden.lote_pt ? `<div class="orden-card-meta">Lote PT: ${esc(item.orden.lote_pt)}</div>` : '';
+              const cantUnidad = item.orden.cantidad
+                ? `<div class="orden-card-meta">C: ${fmtNum(item.orden.cantidad)} ${fmtUnidad(item.orden.unidad)}</div>`
+                : '';
+              const btnCompletar = PUEDE_ETAPAS
+                ? `<button class="btn-completar-card" onclick="ganttCompletar(${item.id},'${esc(item.nombre)}',${item.orden.id})">✓ Completar</button>`
+                : '';
+              return `<div class="orden-card">
+                <div class="orden-card-op">OP: ${esc(item.orden.op ?? '—')}</div>
+                <div class="orden-card-prod" title="${esc(item.orden.descripcion_producto)}">${esc(item.orden.descripcion_producto)}</div>
+                ${cantUnidad}
+                ${lotePT}
+                ${inicio ? `<div class="orden-card-meta">${inicio}</div>` : ''}
+                ${btnCompletar}
+              </div>`;
+            }).join('');
+
+            return `<div class="area-col">
+              <div class="area-col-header" style="background:${c.areaBg};color:${c.areaTxt}">
+                📍 ${esc(areaLabel)}
+              </div>
+              <div class="area-col-body">${cards}</div>
+            </div>`;
+          }).join('') +
+        `</div>`;
+      }
+
+      const countBadge = items.length
+        ? `<span class="linea-count" style="background:rgba(0,0,0,.12)">${items.length} en curso</span>`
+        : '';
+
+      html += `<div class="linea-bloque" style="border-color:${c.borde}">
+        <div class="linea-header" style="background:${c.bg};color:${c.txt};border-bottom:1px solid ${c.borde}">
+          <span>${linea.icon} ${linea.label}</span>
+          ${countBadge}
+        </div>
+        ${cuerpo}
+      </div>`;
+    });
+
+    // Línea "Otros" para etapas en curso que no encajan en ningún grupo
+    const otrosItems = enCurso.filter(e => !LINEAS.some(l => etapaEnLinea(e.nombre, l)));
+    if (otrosItems.length) {
+      const porArea = {};
+      otrosItems.forEach(item => {
+        const k = item.area || item.nombre;
+        if (!porArea[k]) porArea[k] = [];
+        porArea[k].push(item);
+      });
+      html += `<div class="linea-bloque" style="border-color:#e2e8f0">
+        <div class="linea-header" style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">
+          <span>🔧 Otras etapas</span>
+          <span class="linea-count" style="background:#e2e8f0;color:#475569">${otrosItems.length} en curso</span>
+        </div>
+        <div class="linea-body">
+          ${Object.keys(porArea).map(k => {
+            const cards = porArea[k].map(item => {
+              const inicio = item.fecha_inicio ? `▶ ${fmtFecha(item.fecha_inicio)}` : '';
+              const lotePT = item.orden.lote_pt ? `<div class="orden-card-meta">Lote PT: ${esc(item.orden.lote_pt)}</div>` : '';
+              const cantUnidad2 = item.orden.cantidad
+                ? `<div class="orden-card-meta">C: ${fmtNum(item.orden.cantidad)} ${fmtUnidad(item.orden.unidad)}</div>`
+                : '';
+              const btnCompletar = PUEDE_ETAPAS
+                ? `<button class="btn-completar-card" onclick="ganttCompletar(${item.id},'${esc(item.nombre)}',${item.orden.id})">✓ Completar</button>`
+                : '';
+              return `<div class="orden-card" style="border-color:#cbd5e1">
+                <div class="orden-card-op">OP: ${esc(item.orden.op ?? '—')}</div>
+                <div class="orden-card-prod" title="${esc(item.orden.descripcion_producto)}">${esc(item.orden.descripcion_producto)}</div>
+                ${cantUnidad2}
+                ${lotePT}
+                <div style="font-size:.7rem;color:#64748b">${esc(item.nombre)}</div>
+                ${inicio ? `<div class="orden-card-meta">${inicio}</div>` : ''}
+                ${btnCompletar}
+              </div>`;
+            }).join('');
+            const areaLabel = k === '__sin_area__' ? 'Sin área' : k;
+            return `<div class="area-col">
+              <div class="area-col-header" style="background:#f1f5f9;color:#475569">📍 ${esc(areaLabel)}</div>
+              <div class="area-col-body">${cards}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+
+    wrap.innerHTML = html;
+  }
+
+  // ─── Vista Por Orden (tabla completa) ────────────────────────────────────────
+  function renderTabla() {
+    const wrap = document.getElementById('ganttTabla');
+    if (!_datos.length) { wrap.innerHTML = '<p class="empty-msg">Sin órdenes activas.</p>'; return; }
+
+    const etapasNombres = [];
+    _datos.forEach(o => o.etapas.forEach(e => {
+      if (!etapasNombres.includes(e.nombre)) etapasNombres.push(e.nombre);
+    }));
+
+    let html = `<table class="gantt-table"><thead><tr>
+      <th class="col-op">OP</th>
+      <th style="min-width:90px">Lote PT</th>
+      <th class="col-prod">Producto</th>
+      <th style="min-width:90px">Cantidad</th>
+      ${etapasNombres.map(n => `<th>${esc(n)}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+    _datos.forEach(o => {
+      // Build map: nombre → list of etapas (multiple iterations possible)
+      const etapaMap = {};
+      o.etapas.forEach(e => {
+        if (!etapaMap[e.nombre]) etapaMap[e.nombre] = [];
+        etapaMap[e.nombre].push(e);
+      });
+      // Collect all unique etapa estados for this order row
+      const estadosRow = [...new Set(o.etapas.map(e => e.estado))].join(',');
+      const cantDisplay = o.cantidad ? `${fmtNum(o.cantidad)} ${fmtUnidad(o.unidad)}` : '—';
+      html += `<tr data-op="${esc(o.op ?? '')}" data-prod="${esc(o.descripcion_producto)}" data-lote="${esc(o.lote_pt ?? '')}" data-estados="${estadosRow}">
+        <td class="col-op" style="font-family:monospace">${esc(o.op ?? '—')}</td>
+        <td style="font-family:monospace;font-size:.78rem">${esc(o.lote_pt ?? '—')}</td>
+        <td class="col-prod" style="font-size:.8rem">${esc(o.descripcion_producto)}</td>
+        <td style="font-size:.78rem;white-space:nowrap">${cantDisplay}</td>
+        ${etapasNombres.map(nombre => {
+          const lista = etapaMap[nombre];
+          if (!lista || !lista.length) return '<td style="background:var(--gray-50)"></td>';
+          const cells = lista.map(e => {
+            let sub = '';
+            if (e.area)         sub += `📍 ${esc(e.area)} `;
+            if (e.fecha_inicio) sub += `▶ ${fmtFecha(e.fecha_inicio)}`;
+            if (e.fecha_fin)    sub += ` ■ ${fmtFecha(e.fecha_fin)}`;
+            const nomDisplay = e.nombre_display || (e.iteracion > 1 ? `${nombre} ${e.iteracion}` : nombre);
+            let btns = '';
+            if (PUEDE_ETAPAS) {
+              if (e.estado === 'pendiente') {
+                const areasJson = JSON.stringify(e.areas_posibles ?? []).replace(/"/g, '&quot;');
+                btns = `<button onclick="ganttIniciar(${e.id},'${esc(nombre)}',${areasJson})"
+                  style="margin-top:.25rem;width:100%;padding:.15rem;font-size:.68rem;font-weight:700;border-radius:4px;cursor:pointer;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd">▶ Iniciar</button>`;
+              } else if (e.estado === 'en_curso') {
+                const areasJsonEC = JSON.stringify(e.areas_posibles ?? []).replace(/"/g, '&quot;');
+                const btnArea = (e.areas_posibles ?? []).length > 1
+                  ? `<button onclick="ganttCambiarArea(${e.id},'${esc(nombre)}',${areasJsonEC},${e.area_id ?? 'null'})"
+                      style="margin-top:.25rem;width:100%;padding:.15rem;font-size:.68rem;font-weight:700;border-radius:4px;cursor:pointer;background:#fef9c3;color:#854d0e;border:1px solid #fde047">✏ Área</button>`
+                  : '';
+                btns = `<button onclick="ganttCompletar(${e.id},'${esc(nombre)}',${o.id})"
+                  style="margin-top:.25rem;width:100%;padding:.15rem;font-size:.68rem;font-weight:700;border-radius:4px;cursor:pointer;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7">✓ Completar</button>${btnArea}`;
+              }
+            }
+            return `<div class="bar bar-${e.estado}" style="margin-bottom:.2rem">
+              ${fmtEstadoEtapa(e.estado)}${lista.length > 1 ? ` <span style="font-size:.7rem;opacity:.7">${esc(nomDisplay)}</span>` : ''}
+              ${sub ? `<span class="bar-sub">${sub}</span>` : ''}
+              ${btns}
+            </div>`;
+          }).join('');
+          return `<td class="bar-cell">${cells}</td>`;
+        }).join('')}
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+    // Reaplicar filtros activos
+    if (document.getElementById('filtroTexto').value || document.getElementById('filtroEtapaEstado').value) {
+      aplicarFiltros();
+    }
+  }
+
+  // ─── Tabs ────────────────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    document.getElementById('vista-areas').style.display = tab === 'areas' ? 'flex' : 'none';
+    document.getElementById('vista-orden').style.display = tab === 'orden' ? 'flex' : 'none';
+    document.getElementById('vista-carga').style.display = tab === 'carga' ? 'flex' : 'none';
+    document.getElementById('tab-areas-btn').classList.toggle('active', tab === 'areas');
+    document.getElementById('tab-orden-btn').classList.toggle('active', tab === 'orden');
+    document.getElementById('tab-carga-btn').classList.toggle('active', tab === 'carga');
+    if (tab === 'orden') aplicarFiltros();
+    if (tab === 'carga') renderCarga();
+  }
+
+  // ─── Vista Carga por Etapa ───────────────────────────────────────────────────
+  function renderCarga() {
+    const wrap = document.getElementById('cargaBody');
+    if (!_datos.length) { wrap.innerHTML = '<p class="empty-msg">Sin órdenes activas.</p>'; return; }
+
+    // Recolectar todas las etapas en_curso agrupadas por nombre de etapa
+    const porEtapa = {};
+    _datos.forEach(orden => {
+      orden.etapas.filter(e => e.estado === 'en_curso').forEach(e => {
+        const nombre = e.nombre_display || e.nombre || 'Sin nombre';
+        if (!porEtapa[nombre]) porEtapa[nombre] = { activas: [], proximas: [] };
+        porEtapa[nombre].activas.push({ ...e, orden });
+      });
+    });
+
+    // Órdenes sin ninguna etapa en curso → agregar próxima pendiente al grupo de esa etapa
+    _datos.forEach(orden => {
+      const tieneEnCurso = orden.etapas.some(e => e.estado === 'en_curso');
+      if (!tieneEnCurso) {
+        const pend = orden.etapas.find(e => e.estado === 'pendiente');
+        if (pend) {
+          const nombre = pend.nombre_display || pend.nombre || 'Sin nombre';
+          if (!porEtapa[nombre]) porEtapa[nombre] = { activas: [], proximas: [] };
+          porEtapa[nombre].proximas.push({ ...pend, orden });
+        }
+      }
+    });
+
+    const todasEtapas = Object.keys(porEtapa).sort((a, b) => a.localeCompare(b));
+
+    if (!todasEtapas.length) { wrap.innerHTML = '<p class="empty-msg">Sin actividad.</p>'; return; }
+
+    wrap.innerHTML = todasEtapas.map(etapa => {
+      const { activas, proximas: proxList } = porEtapa[etapa];
+      return `
+        <div class="card" style="margin-bottom:.75rem">
+          <div class="card-header" style="background:#f8fafc">
+            <span class="card-title" style="font-size:.95rem">⚙ ${esc(etapa)}</span>
+            <span style="font-size:.8rem;color:var(--gray-500)">
+              <span style="color:#1e40af;font-weight:700">${activas.length} en curso</span>
+              ${proxList.length ? ` · ${proxList.length} próxima${proxList.length > 1 ? 's' : ''}` : ''}
+            </span>
+          </div>
+          ${activas.length ? `
+          <div style="padding:.5rem 1rem">
+            <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">En curso</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+              ${activas.map(e => `
+                <a href="/ordenes/${e.orden.id}" style="text-decoration:none">
+                  <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:8px;padding:.4rem .75rem;font-size:.78rem">
+                    <div style="font-weight:800;color:#1e40af;font-family:monospace">OP: ${esc(e.orden.op ?? '—')}</div>
+                    <div style="color:#1e293b;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.orden.descripcion_producto)}">${esc(e.orden.descripcion_producto)}</div>
+                    ${e.orden.lote_pt ? `<div style="color:#64748b;font-size:.7rem;font-family:monospace">Lote PT: ${esc(e.orden.lote_pt)}</div>` : ''}
+                    ${e.orden.cantidad ? `<div style="color:#64748b;font-size:.7rem">C: ${fmtNum(e.orden.cantidad)} ${fmtUnidad(e.orden.unidad)}</div>` : ''}
+                    ${e.area ? `<div style="color:#64748b;font-size:.7rem">📍 ${esc(e.area)}</div>` : ''}
+                    ${e.fecha_inicio ? `<div style="color:#64748b;font-size:.68rem;font-family:monospace">▶ ${fmtFecha(e.fecha_inicio)}</div>` : ''}
+                  </div>
+                </a>
+              `).join('')}
+            </div>
+          </div>` : ''}
+          ${proxList.length ? `
+          <div style="padding:.5rem 1rem;border-top:1px solid var(--gray-100)">
+            <div style="font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">Próximas</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem">
+              ${proxList.map(e => `
+                <a href="/ordenes/${e.orden.id}" style="text-decoration:none">
+                  <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:.4rem .75rem;font-size:.78rem">
+                    <div style="font-weight:800;color:#374151;font-family:monospace">OP: ${esc(e.orden.op ?? '—')}</div>
+                    <div style="color:#1e293b;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.orden.descripcion_producto)}">${esc(e.orden.descripcion_producto)}</div>
+                    ${e.orden.lote_pt ? `<div style="color:#64748b;font-size:.7rem;font-family:monospace">Lote PT: ${esc(e.orden.lote_pt)}</div>` : ''}
+                    ${e.orden.cantidad ? `<div style="color:#64748b;font-size:.7rem">C: ${fmtNum(e.orden.cantidad)} ${fmtUnidad(e.orden.unidad)}</div>` : ''}
+                    ${e.area ? `<div style="color:#64748b;font-size:.7rem">📍 ${esc(e.area)}</div>` : ''}
+                  </div>
+                </a>
+              `).join('')}
+            </div>
+          </div>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ─── Filtros Por Orden ───────────────────────────────────────────────────────
+  function aplicarFiltros() {
+    const texto      = document.getElementById('filtroTexto').value.trim().toLowerCase();
+    const etapaEstado = document.getElementById('filtroEtapaEstado').value;
+
+    const filas = document.querySelectorAll('#ganttTabla tbody tr');
+    let visibles = 0;
+
+    filas.forEach(tr => {
+      const op      = (tr.dataset.op  || '').toLowerCase();
+      const prod    = (tr.dataset.prod || '').toLowerCase();
+      const lote    = (tr.dataset.lote || '').toLowerCase();
+
+      // Filtro texto: busca en OP, producto y lote PT
+      const coincideTexto = !texto ||
+        op.includes(texto) || prod.includes(texto) || lote.includes(texto);
+
+      // Filtro estado de etapa: la fila tiene al menos una celda con ese estado
+      const coincideEstado = !etapaEstado ||
+        tr.dataset.estados?.includes(etapaEstado);
+
+      const visible = coincideTexto && coincideEstado;
+      tr.style.display = visible ? '' : 'none';
+      if (visible) visibles++;
+    });
+
+    const conteo = document.getElementById('filtroConteo');
+    conteo.textContent = texto || etapaEstado
+      ? `${visibles} resultado${visibles !== 1 ? 's' : ''}`
+      : '';
+  }
+
+  function limpiarFiltros() {
+    document.getElementById('filtroTexto').value = '';
+    document.getElementById('filtroEtapaEstado').value = '';
+    document.getElementById('filtroConteo').textContent = '';
+    document.querySelectorAll('#ganttTabla tbody tr').forEach(tr => tr.style.display = '');
+  }
+
+  // ─── Acciones de iniciar / completar / cambiar área desde gantt ──────────────
+  let _modoModalAreaGantt  = 'iniciar'; // 'iniciar' | 'cambiar'
+  let _etapaGanttCambiarId = null;
+
+  function _abrirModalAreaGantt(titulo, areas, areaActualId, modo) {
+    _modoModalAreaGantt = modo;
+    document.getElementById('modalAreaGanttTitulo').textContent = titulo;
+    const sel = document.getElementById('inAreaGantt');
+    sel.innerHTML = '<option value="">— Seleccionar —</option>';
+    areas.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id; opt.textContent = a.nombre;
+      if (areaActualId && a.id === areaActualId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    document.getElementById('alertAreaGantt').style.display = 'none';
+    const btn = document.getElementById('btnConfirmarAreaGantt');
+    btn.textContent = modo === 'iniciar' ? '▶ Iniciar' : '✏ Guardar área';
+    document.getElementById('modalAreaGantt').classList.add('open');
+  }
+
+  async function confirmarSeleccionAreaGantt() {
+    const area_id = document.getElementById('inAreaGantt').value;
+    if (!area_id) { showAlert('alertAreaGantt', 'Seleccioná un área.'); return; }
+    cerrarModal('modalAreaGantt');
+    if (_modoModalAreaGantt === 'iniciar') {
+      await _ganttEjecutarIniciar(_etapaGanttId, parseInt(area_id));
+    } else {
+      await _ganttEjecutarCambiarArea(_etapaGanttCambiarId, parseInt(area_id));
+    }
+  }
+
+  async function ganttCambiarArea(id, nombre, areas, areaActualId) {
+    _etapaGanttCambiarId = id;
+    _abrirModalAreaGantt(`Cambiar área: ${nombre}`, areas, areaActualId, 'cambiar');
+  }
+
+  async function _ganttEjecutarCambiarArea(id, area_id) {
+    const res = await fetch(`/api/etapas-proceso/${id}/area`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ area_id }),
+    });
+    if (res.ok) await cargar();
+    else { const e = await res.json(); alert(e.detail ?? 'Error al cambiar área.'); }
+  }
+
+  async function ganttIniciar(id, nombre, areas) {
+    if (!areas || areas.length <= 1) {
+      await _ganttEjecutarIniciar(id, null);
+    } else {
+      _etapaGanttId  = id;
+      _etapaGanttNom = nombre;
+      _abrirModalAreaGantt(`Iniciar: ${nombre} — Seleccioná el área`, areas, null, 'iniciar');
+    }
+  }
+
+  async function _ganttEjecutarIniciar(id, area_id) {
+    const body = area_id ? { area_id } : {};
+    const res = await fetch(`/api/etapas-proceso/${id}/iniciar`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (res.ok) await cargar();
+    else { const e = await res.json(); alert(e.detail ?? 'Error al iniciar.'); }
+  }
+
+  function ganttCompletar(id, nombre, ordenId) {
+    const esEstuchado = nombre.toLowerCase().includes('estuch');
+    if (esEstuchado && ordenId) {
+      location.href = `/ordenes/${ordenId}`;
+    } else {
+      _ganttEjecutarCompletar(id, false);
+    }
+  }
+
+  async function _ganttEjecutarCompletar(id, parcial) {
+    const res = await fetch(`/api/etapas-proceso/${id}/completar`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ parcial }),
+    });
+    if (res.ok) await cargar();
+    else alert('Error al completar.');
+  }
+
+  function cerrarModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? (u || ''); }
+  function fmtNum(n) { return n ? Math.round(n).toLocaleString('es-AR') : ''; }
+
+  function fmtEstadoEtapa(e) {
+    return { pendiente:'⏳ Pendiente', en_curso:'● En curso', completada:'✓ Completada' }[e] ?? e;
+  }
+  function fmtFecha(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) + ' ' +
+           d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function showAlert(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.style.display = ''; }
+
+  document.querySelectorAll('.modal-overlay').forEach(el =>
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); })
+  );
+</script>
+</body>
+</html>

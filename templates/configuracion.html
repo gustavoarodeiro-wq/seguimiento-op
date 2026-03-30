@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuración del sistema — Seguimiento OP</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <style>
+    .config-section {
+      background:#fff;border-radius:12px;border:1px solid var(--gray-200);
+      margin-bottom:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,.05);overflow:hidden;
+    }
+    .config-section-header {
+      padding:.85rem 1.5rem;background:var(--gray-50);border-bottom:1px solid var(--gray-200);
+      display:flex;align-items:center;gap:.6rem;
+    }
+    .config-section-title { font-size:.9rem;font-weight:700;color:var(--gray-700); }
+    .config-section-body { padding:1.25rem 1.5rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem; }
+    .config-item label { font-size:.8rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:.4rem; }
+    .config-item input, .config-item select {
+      width:100%;padding:.55rem .75rem;border:1.5px solid var(--gray-300);border-radius:8px;
+      font-size:.9rem;background:#fff;box-sizing:border-box;
+    }
+    .config-item input:focus, .config-item select:focus {
+      outline:none;border-color:var(--primary);
+    }
+    .config-hint { font-size:.75rem;color:var(--gray-400);margin-top:.3rem; }
+    .save-bar { display:flex;justify-content:flex-end;gap:.75rem;align-items:center;margin-top:1.5rem; }
+    .msg-ok   { font-size:.85rem;color:#16a34a;font-weight:600; }
+    .msg-err  { font-size:.85rem;color:#dc2626;font-weight:600; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  {% include "partials/topbar.html" %}
+  {% include "partials/sidebar.html" %}
+
+  <main class="main-content">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Configuración del sistema</h1>
+        <p class="page-subtitle">Ajustes generales que afectan a todos los usuarios</p>
+      </div>
+    </div>
+
+    <!-- General -->
+    <div class="config-section">
+      <div class="config-section-header">
+        <span>🏢</span>
+        <span class="config-section-title">General</span>
+      </div>
+      <div class="config-section-body">
+        <div class="config-item">
+          <label>Nombre del laboratorio / empresa</label>
+          <input type="text" id="cfgNombre" placeholder="Ej: Laboratorio XYZ S.A." maxlength="100">
+          <div class="config-hint">Se muestra en el encabezado de la aplicación.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fecha y hora -->
+    <div class="config-section">
+      <div class="config-section-header">
+        <span>🕐</span>
+        <span class="config-section-title">Fecha y hora</span>
+      </div>
+      <div class="config-section-body">
+        <div class="config-item">
+          <label>Zona horaria del servidor</label>
+          <select id="cfgZona">
+            <option value="local">Usar reloj del sistema operativo (recomendado)</option>
+            <optgroup label="América del Sur">
+              <option value="America/Argentina/Buenos_Aires">Argentina — Buenos Aires (UTC-3)</option>
+              <option value="America/Sao_Paulo">Brasil — São Paulo (UTC-3)</option>
+              <option value="America/Santiago">Chile — Santiago (UTC-4/-3)</option>
+              <option value="America/Lima">Perú — Lima (UTC-5)</option>
+              <option value="America/Bogota">Colombia — Bogotá (UTC-5)</option>
+              <option value="America/Caracas">Venezuela — Caracas (UTC-4)</option>
+              <option value="America/Montevideo">Uruguay — Montevideo (UTC-3)</option>
+              <option value="America/Asuncion">Paraguay — Asunción (UTC-4/-3)</option>
+            </optgroup>
+            <optgroup label="América del Norte">
+              <option value="America/Mexico_City">México — Ciudad de México (UTC-6/-5)</option>
+              <option value="America/New_York">EE.UU. — Nueva York (UTC-5/-4)</option>
+              <option value="America/Chicago">EE.UU. — Chicago (UTC-6/-5)</option>
+              <option value="America/Los_Angeles">EE.UU. — Los Ángeles (UTC-8/-7)</option>
+            </optgroup>
+            <optgroup label="Europa">
+              <option value="Europe/Madrid">España — Madrid (UTC+1/+2)</option>
+              <option value="Europe/London">Reino Unido — Londres (UTC+0/+1)</option>
+            </optgroup>
+            <optgroup label="Universal">
+              <option value="UTC">UTC (sin ajuste)</option>
+            </optgroup>
+          </select>
+          <div class="config-hint">Controla la hora que se registra en inicios, entregas e historial.</div>
+        </div>
+        <div class="config-item">
+          <label>Formato de hora en pantalla</label>
+          <select id="cfgFmtHora">
+            <option value="24h">24 horas (ej: 14:30)</option>
+            <option value="12h">12 horas AM/PM (ej: 2:30 PM)</option>
+          </select>
+          <div class="config-hint">Cómo se muestran las horas en el historial y etapas.</div>
+        </div>
+        <div class="config-item">
+          <label>Hora actual del servidor</label>
+          <div style="padding:.55rem .75rem;border:1.5px solid var(--gray-200);border-radius:8px;font-family:monospace;font-size:.9rem;background:var(--gray-50);color:var(--gray-700)" id="horaActual">
+            Cargando…
+          </div>
+          <div class="config-hint">Verificá que coincida con tu hora local antes de guardar.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Producción -->
+    <div class="config-section">
+      <div class="config-section-header">
+        <span>⚙</span>
+        <span class="config-section-title">Producción</span>
+      </div>
+      <div class="config-section-body">
+        <div class="config-item">
+          <label>Vencimiento mínimo (meses desde hoy)</label>
+          <select id="cfgVencMin">
+            <option value="0">Mes actual (sin restricción adicional)</option>
+            <option value="1">Al menos 1 mes adelante</option>
+            <option value="2">Al menos 2 meses adelante</option>
+            <option value="3">Al menos 3 meses adelante</option>
+            <option value="6">Al menos 6 meses adelante</option>
+          </select>
+          <div class="config-hint">Tiempo mínimo de vencimiento al emitir una orden.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-bar">
+      <span id="cfgMsg"></span>
+      <button class="btn btn-secondary" onclick="cargarConfig()">↺ Descartar cambios</button>
+      <button class="btn btn-primary" onclick="guardarConfig()">💾 Guardar configuración</button>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  async function cargarConfig() {
+    const res = await fetch('/api/config');
+    if (!res.ok) return;
+    const d = await res.json();
+
+    document.getElementById('cfgNombre').value  = d.nombre_laboratorio || '';
+    document.getElementById('cfgZona').value     = d.zona_horaria       || 'local';
+    document.getElementById('cfgFmtHora').value  = d.formato_hora       || '24h';
+    document.getElementById('cfgVencMin').value  = d.venc_minimo_meses  || '0';
+  }
+
+  async function guardarConfig() {
+    const msg = document.getElementById('cfgMsg');
+    msg.textContent = 'Guardando…'; msg.className = '';
+    const res = await fetch('/api/config', {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nombre_laboratorio: document.getElementById('cfgNombre').value.trim(),
+        zona_horaria:       document.getElementById('cfgZona').value,
+        formato_hora:       document.getElementById('cfgFmtHora').value,
+        venc_minimo_meses:  document.getElementById('cfgVencMin').value,
+      }),
+    });
+    if (res.ok) {
+      msg.textContent = '✓ Configuración guardada correctamente.'; msg.className = 'msg-ok';
+      actualizarHora();
+    } else {
+      const e = await res.json();
+      msg.textContent = '⚠ ' + (e.detail ?? 'Error al guardar.'); msg.className = 'msg-err';
+    }
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  }
+
+  async function actualizarHora() {
+    const res = await fetch('/api/config/hora-actual');
+    if (res.ok) {
+      const d = await res.json();
+      document.getElementById('horaActual').textContent = d.hora;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    cargarConfig();
+    actualizarHora();
+    setInterval(actualizarHora, 10000);
+  });
+</script>
+</body>
+</html>

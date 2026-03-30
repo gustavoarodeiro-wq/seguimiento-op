@@ -1,22 +1,22 @@
 from fastapi import APIRouter, Request, Form, Depends, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+from shared import templates as _shared_templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, case
 from datetime import datetime, date
+
+from config_cache import now_local as now_ar
 from typing import Optional
 
 from database import (
     get_db, Orden, HistorialEstado, Faltante, Entrega,
     ProductoTerminado, TipoFaltante, Usuario,
-    EtapaOrden, EtapaProduccion, FormaFarmaceutica,
+    EtapaOrden, EtapaProduccion, EtapaProducto, AreaProduccion, FormaFarmaceutica,
 )
 from routers.auth import require_auth, get_current_user
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None  # workaround Python 3.14+
-templates.env.filters["fmt_unidad"] = lambda u: {"KG": "Kg", "G": "g", "ML": "mL", "UN": "UN", "L": "L"}.get(str(u), str(u))
+templates = _shared_templates
 
 # Helpers de permiso — leen user["permisos"] calculado al login
 def _puede(user: dict, permiso: str) -> bool:
@@ -36,8 +36,8 @@ TRANSICIONES = {
     "faltante":    ["para_emitir", "revisar", "cancelada"],
     "para_emitir": ["emitido", "revisar", "cancelada"],
     "emitido":     ["en_proceso", "cancelada"],
-    "en_proceso":  ["terminada", "cancelada"],
-    "terminada":   ["entregada"],
+    "en_proceso":  ["entregada", "cancelada"],
+    "terminada":   ["entregada"],   # legacy: órdenes existentes en ese estado
     "entregada":   [],
     "cancelada":   [],
 }
@@ -264,9 +264,50 @@ async def api_ordenes(
         nombres = {u.id: u.nombre for u in
                    db.query(Usuario).filter(Usuario.id.in_(user_ids)).all()}
 
+    # Etapa actual: una query para todas las órdenes en proceso
+    etapa_actual:  dict[int, str] = {}
+    etapa_estado_map: dict[int, str] = {}
+    en_proceso_ids = [o.id for o in ordenes if o.estado == "en_proceso"]
+    if en_proceso_ids:
+        from sqlalchemy.orm import joinedload as jl
+        etapas_filas = (
+            db.query(EtapaOrden)
+            .options(jl(EtapaOrden.etapa_producto))
+            .filter(
+                EtapaOrden.orden_id.in_(en_proceso_ids),
+                EtapaOrden.estado.in_(["en_curso", "pendiente"]),
+            )
+            .order_by(EtapaOrden.orden_id, EtapaOrden.id)
+            .all()
+        )
+        # Agrupar por orden (comparación explícita para evitar problemas con espacios)
+        por_orden: dict[int, dict] = {}
+        for e in etapas_filas:
+            ep = e.etapa_producto
+            nombre = (e.nombre_display or "").strip() or (ep.nombre if ep else None) or "—"
+            est = (e.estado or "").strip()
+            if e.orden_id not in por_orden:
+                por_orden[e.orden_id] = {"en_curso": [], "pendiente": []}
+            if est == "en_curso":
+                por_orden[e.orden_id]["en_curso"].append(nombre)
+            elif est == "pendiente":
+                por_orden[e.orden_id]["pendiente"].append(nombre)
+        siguiente_map: dict[int, str] = {}
+        for oid, data in por_orden.items():
+            if data["en_curso"]:
+                etapa_actual[oid] = " / ".join(data["en_curso"])
+                etapa_estado_map[oid] = "en_curso"
+                if data["pendiente"]:
+                    siguiente_map[oid] = data["pendiente"][0]
+            elif data["pendiente"]:
+                etapa_actual[oid] = data["pendiente"][0]
+                etapa_estado_map[oid] = "pendiente"
+    else:
+        siguiente_map = {}
+
     return {
         "total": total,
-        "items": [_orden_dict(o, nombres.get(o.creado_por)) for o in ordenes],
+        "items": [_orden_dict(o, nombres.get(o.creado_por), etapa_actual.get(o.id), etapa_estado_map.get(o.id), siguiente_map.get(o.id)) for o in ordenes],
     }
 
 
@@ -301,26 +342,27 @@ async def api_orden_detalle(
     etapas_orden = (
         db.query(EtapaOrden)
         .filter(EtapaOrden.orden_id == orden_id)
-        .join(EtapaOrden.etapa)
-        .order_by(EtapaProduccion.orden, EtapaOrden.id)
+        .order_by(EtapaOrden.id)
         .all()
     )
     etapa_user_ids = {e.usuario_inicio_id for e in etapas_orden if e.usuario_inicio_id}
     user_ids = {h.usuario_id for h in historial if h.usuario_id} | etapa_user_ids
     usuarios = {u.id: u.nombre for u in db.query(Usuario).filter(Usuario.id.in_(user_ids)).all()}
 
-    from collections import defaultdict
-    iter_count = defaultdict(int)
     etapas_lista = []
     for e in etapas_orden:
-        iter_count[e.etapa_produccion_id] += 1
+        nombre = e.etapa_producto.nombre if e.etapa_producto else "—"
+        area_nombre = e.area.nombre if e.area else None
         etapas_lista.append({
-            "id":           e.id,
-            "nombre":       e.etapa.nombre,
-            "iteracion":    iter_count[e.etapa_produccion_id],
-            "fecha_inicio": _fmt(e.fecha_inicio),
-            "fecha_fin":    _fmt(e.fecha_fin),
-            "usuario":      usuarios.get(e.usuario_inicio_id),
+            "id":             e.id,
+            "nombre":         nombre,
+            "nombre_display": e.nombre_display,
+            "iteracion":      e.iteracion,
+            "area":           area_nombre,
+            "estado":         e.estado,
+            "fecha_inicio":   _fmt(e.fecha_inicio),
+            "fecha_fin":      _fmt(e.fecha_fin),
+            "usuario":        usuarios.get(e.usuario_inicio_id),
         })
 
     return {
@@ -342,7 +384,7 @@ async def api_actualizar_datos(
     db: Session = Depends(get_db),
     user: dict = Depends(require_auth),
 ):
-    """Actualiza lote granel, lote PT y vencimiento (MM/AAAA) de una orden."""
+    """Actualiza OP, lotes, vencimiento y cantidad de una orden."""
     _exigir(user, "editar_datos_orden")
 
     orden = _get_or_404(db, orden_id)
@@ -354,18 +396,29 @@ async def api_actualizar_datos(
         orden.lote_granel = body["lote_granel"].strip() or None
     if "lote_pt" in body:
         orden.lote_pt = body["lote_pt"].strip() or None
+    if "cantidad" in body:
+        try:
+            cant = float(body["cantidad"])
+            if cant <= 0:
+                raise HTTPException(status_code=422, detail="La cantidad debe ser mayor a 0.")
+            orden.cantidad = cant
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Cantidad inválida.")
     if "fecha_vencimiento" in body:
         raw = body["fecha_vencimiento"].strip()
         if raw:
             parsed = _parse_mes_anio(raw)
             if parsed is None:
                 raise HTTPException(status_code=422, detail="Vencimiento inválido. Usá el formato MM/AAAA (ej: 06/2026).")
+            hoy = date.today()
+            if parsed < date(hoy.year, hoy.month, 1):
+                raise HTTPException(status_code=422, detail="El vencimiento no puede ser anterior al mes actual.")
             orden.fecha_vencimiento = parsed
         else:
             orden.fecha_vencimiento = None
 
     orden.ultima_modificacion_por   = user["id"]
-    orden.ultima_modificacion_fecha = datetime.utcnow()
+    orden.ultima_modificacion_fecha = now_ar()
     db.commit()
     return _orden_dict(orden)
 
@@ -415,7 +468,7 @@ async def api_cambiar_estado(
         subestado_anterior=orden.subestado,
         subestado_nuevo=subestado,
         usuario_id=user["id"],
-        fecha=datetime.utcnow(),
+        fecha=now_ar(),
         observaciones=observaciones,
     )
     db.add(hist)
@@ -424,26 +477,27 @@ async def api_cambiar_estado(
     orden.estado = nuevo_estado
     orden.subestado = subestado
     orden.ultima_modificacion_por = user["id"]
-    orden.ultima_modificacion_fecha = datetime.utcnow()
+    orden.ultima_modificacion_fecha = now_ar()
 
     if nuevo_estado == "en_proceso" and not orden.fecha_inicio_produccion:
-        orden.fecha_inicio_produccion = datetime.utcnow()
-        # Auto-crear etapas de la orden desde la forma farmacéutica del producto
+        orden.fecha_inicio_produccion = now_ar()
+        # Auto-crear etapas de la orden desde las etapas del producto
         ya_creadas = db.query(EtapaOrden).filter(EtapaOrden.orden_id == orden_id).count()
         if ya_creadas == 0:
             pt = db.query(ProductoTerminado).filter(
                 ProductoTerminado.codigo == orden.codigo_producto
             ).first()
-            if pt and pt.forma_farmaceutica_id:
-                etapas = db.query(EtapaProduccion).filter(
-                    EtapaProduccion.forma_farmaceutica_id == pt.forma_farmaceutica_id,
-                    EtapaProduccion.activo == True,
-                ).order_by(EtapaProduccion.orden).all()
+            if pt:
+                etapas = db.query(EtapaProducto).filter(
+                    EtapaProducto.producto_id == pt.id,
+                    EtapaProducto.activo == True,
+                ).order_by(EtapaProducto.orden).all()
                 for e in etapas:
-                    db.add(EtapaOrden(orden_id=orden_id, etapa_produccion_id=e.id))
+                    db.add(EtapaOrden(orden_id=orden_id, etapa_producto_id=e.id, estado="pendiente"))
 
-    if nuevo_estado == "terminada":
-        orden.fecha_terminado = datetime.utcnow()
+    if nuevo_estado in ("terminada", "entregada"):
+        if not orden.fecha_terminado:
+            orden.fecha_terminado = now_ar()
         if cantidad_obt is not None:
             orden.cantidad_obtenida = float(cantidad_obt)
             if orden.cantidad and orden.cantidad > 0:
@@ -521,7 +575,7 @@ async def api_agregar_faltante(
         descripcion=body.get("descripcion", ""),
         observacion=body.get("observacion"),
         resuelto=False,
-        fecha_registro=datetime.utcnow(),
+        fecha_registro=now_ar(),
     )
     db.add(faltante)
 
@@ -532,12 +586,12 @@ async def api_agregar_faltante(
             estado_anterior="revisar",
             estado_nuevo="faltante",
             usuario_id=user["id"],
-            fecha=datetime.utcnow(),
+            fecha=now_ar(),
             observaciones="Faltante registrado durante revisión.",
         ))
         orden.estado = "faltante"
         orden.ultima_modificacion_por = user["id"]
-        orden.ultima_modificacion_fecha = datetime.utcnow()
+        orden.ultima_modificacion_fecha = now_ar()
 
     db.commit()
     db.refresh(faltante)
@@ -577,7 +631,7 @@ async def api_resolver_faltante(
     if not faltante:
         raise HTTPException(status_code=404, detail="Faltante no encontrado.")
     faltante.resuelto = True
-    faltante.fecha_resolucion = datetime.utcnow()
+    faltante.fecha_resolucion = now_ar()
     db.commit()
 
     pendientes = db.query(func.count(Faltante.id)).filter(
@@ -603,7 +657,7 @@ async def api_registrar_entrega(
 
     entrega = Entrega(
         orden_id=orden_id,
-        fecha_entrega=datetime.utcnow(),
+        fecha_entrega=now_ar(),
         cantidad_entregada=round(float(body.get("cantidad_entregada", 0))),
         muestras_control=muestras,
         remito=body.get("remito"),
@@ -633,12 +687,12 @@ async def api_registrar_entrega(
             estado_anterior=orden.estado,
             estado_nuevo="entregada",
             usuario_id=user["id"],
-            fecha=datetime.utcnow(),
+            fecha=now_ar(),
             observaciones=f"Entrega final. Remito: {entrega.remito or '—'}",
         ))
         orden.estado = "entregada"
         orden.ultima_modificacion_por = user["id"]
-        orden.ultima_modificacion_fecha = datetime.utcnow()
+        orden.ultima_modificacion_fecha = now_ar()
 
     db.commit()
     db.refresh(entrega)
@@ -697,7 +751,7 @@ async def api_editar_entrega(
             estado_anterior=orden.estado,
             estado_nuevo=orden.estado,
             usuario_id=user["id"],
-            fecha=datetime.utcnow(),
+            fecha=now_ar(),
             observaciones="Corrección de entrega: " + "; ".join(cambios),
         ))
 
@@ -716,54 +770,68 @@ async def api_etapas_proceso(
 ):
     orden = _get_or_404(db, orden_id)
 
-    # Creación lazy: si no hay registros aún, crearlos ahora desde la FF del producto
+    # Creación lazy: si la orden está en proceso y no tiene etapas, crearlas
     ya_creadas = db.query(EtapaOrden).filter(EtapaOrden.orden_id == orden_id).count()
-    if ya_creadas == 0:
+    if ya_creadas == 0 and orden.estado == "en_proceso":
         pt = db.query(ProductoTerminado).filter(
             ProductoTerminado.codigo == orden.codigo_producto
         ).first()
-        if pt and pt.forma_farmaceutica_id:
-            etapas = db.query(EtapaProduccion).filter(
-                EtapaProduccion.forma_farmaceutica_id == pt.forma_farmaceutica_id,
-                EtapaProduccion.activo == True,
-            ).order_by(EtapaProduccion.orden).all()
+        if pt:
+            etapas = db.query(EtapaProducto).filter(
+                EtapaProducto.producto_id == pt.id,
+                EtapaProducto.activo == True,
+            ).order_by(EtapaProducto.orden).all()
             for e in etapas:
-                db.add(EtapaOrden(orden_id=orden_id, etapa_produccion_id=e.id))
+                db.add(EtapaOrden(orden_id=orden_id, etapa_producto_id=e.id, estado="pendiente"))
             db.commit()
 
     rows = (
         db.query(EtapaOrden)
         .filter(EtapaOrden.orden_id == orden_id)
-        .join(EtapaOrden.etapa)
-        .order_by(EtapaProduccion.orden, EtapaOrden.id)
+        .order_by(EtapaOrden.id)
         .all()
     )
     user_ids = {r.usuario_inicio_id for r in rows if r.usuario_inicio_id}
+    user_ids |= {r.usuario_fin_id for r in rows if r.usuario_fin_id}
     usuarios = {u.id: u.nombre for u in db.query(Usuario).filter(Usuario.id.in_(user_ids)).all()}
 
-    from collections import defaultdict
-    total_por_etapa = defaultdict(int)
+    # Calcular total de iteraciones y max iteracion por etapa_producto_id
+    from collections import Counter
+    iter_count = Counter(r.etapa_producto_id for r in rows)
+    max_iter: dict[int, int] = {}
     for r in rows:
-        total_por_etapa[r.etapa_produccion_id] += 1
+        if r.etapa_producto_id:
+            max_iter[r.etapa_producto_id] = max(max_iter.get(r.etapa_producto_id, 0), r.iteracion)
 
-    iter_count = defaultdict(int)
     result = []
     for r in rows:
-        iter_count[r.etapa_produccion_id] += 1
-        iteracion = iter_count[r.etapa_produccion_id]
-        total = total_por_etapa[r.etapa_produccion_id]
-        es_parcial = bool(r.fecha_fin) and (iteracion < total)
+        ep = r.etapa_producto
+        areas = [{"id": a.id, "nombre": a.nombre} for a in ep.areas] if ep else []
+        # es_parcial = fue completada pero no es la última iteración de su etapa
+        es_parcial = (
+            r.estado == "completada"
+            and r.etapa_producto_id is not None
+            and r.iteracion < max_iter.get(r.etapa_producto_id, r.iteracion)
+        )
         result.append({
-            "id":                  r.id,
-            "etapa_produccion_id": r.etapa_produccion_id,
-            "iteracion":           iteracion,
-            "total_iteraciones":   total,
-            "es_parcial":          es_parcial,
-            "orden":               r.etapa.orden,
-            "nombre":              r.etapa.nombre,
-            "fecha_inicio":        _fmt(r.fecha_inicio),
-            "fecha_fin":           _fmt(r.fecha_fin),
-            "usuario_inicio":      usuarios.get(r.usuario_inicio_id, None),
+            "id":               r.id,
+            "etapa_producto_id": r.etapa_producto_id,
+            "nombre":           ep.nombre if ep else "—",
+            "nombre_display":   r.nombre_display,
+            "iteracion":        r.iteracion,
+            "total_iteraciones": iter_count.get(r.etapa_producto_id, 1),
+            "orden":            ep.orden if ep else 0,
+            "estado":           r.estado,
+            "es_parcial":       es_parcial,
+            "areas_posibles":   areas,
+            "area_id":          r.area_id,
+            "area_nombre":      r.area.nombre if r.area else None,
+            "fecha_inicio":     _fmt(r.fecha_inicio),
+            "fecha_fin":        _fmt(r.fecha_fin),
+            "cantidad_obtenida": r.cantidad_obtenida,
+            "unidad_obtenida":  r.unidad_obtenida,
+            "usuario_inicio":   usuarios.get(r.usuario_inicio_id),
+            "usuario_fin":      usuarios.get(r.usuario_fin_id),
         })
     return result
 
@@ -779,10 +847,46 @@ async def api_iniciar_etapa(
     row = db.query(EtapaOrden).filter(EtapaOrden.id == etapa_orden_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Etapa no encontrada.")
-    row.fecha_inicio = datetime.utcnow()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    # Área: auto si es única, o tomada del body
+    if body.get("area_id"):
+        row.area_id = int(body["area_id"])
+    elif row.etapa_producto and len(row.etapa_producto.areas) == 1:
+        row.area_id = row.etapa_producto.areas[0].id
+    row.fecha_inicio = now_ar()
+    row.estado = "en_curso"
     row.usuario_inicio_id = user["id"]
     db.commit()
-    return {"ok": True}
+    areas = [{"id": a.id, "nombre": a.nombre} for a in row.etapa_producto.areas] if row.etapa_producto else []
+    return {"ok": True, "area_id": row.area_id, "areas_posibles": areas}
+
+
+@router.patch("/api/etapas-proceso/{etapa_orden_id}/area")
+async def api_cambiar_area_etapa(
+    etapa_orden_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    _exigir(user, "manejar_etapas")
+    row = db.query(EtapaOrden).filter(EtapaOrden.id == etapa_orden_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Etapa no encontrada.")
+    if row.estado not in ("en_curso", "pendiente"):
+        raise HTTPException(status_code=400, detail="Solo se puede cambiar el área de etapas en curso o pendientes.")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    area_id = body.get("area_id")
+    if not area_id:
+        raise HTTPException(status_code=400, detail="Debe indicar un área.")
+    row.area_id = int(area_id)
+    db.commit()
+    return {"ok": True, "area_nombre": row.area.nombre if row.area else None}
 
 
 @router.patch("/api/etapas-proceso/{etapa_orden_id}/completar")
@@ -796,35 +900,77 @@ async def api_completar_etapa(
     row = db.query(EtapaOrden).filter(EtapaOrden.id == etapa_orden_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Etapa no encontrada.")
-
     try:
         body = await request.json()
     except Exception:
         body = {}
-    parcial = bool(body.get("parcial", False))
 
-    row.fecha_fin = datetime.utcnow()
+    parcial = bool(body.get("parcial", False))
+    row.fecha_fin = now_ar()
+    row.estado = "completada"
+    row.usuario_fin_id = user["id"]
 
     if parcial:
-        # Crear nueva EtapaOrden pendiente para el próximo estuchado
+        # Crear siguiente iteración de estuchado
+        ep = row.etapa_producto
+        siguiente_iter = row.iteracion + 1
         nuevo = EtapaOrden(
             orden_id=row.orden_id,
-            etapa_produccion_id=row.etapa_produccion_id,
+            etapa_producto_id=row.etapa_producto_id,
+            estado="pendiente",
+            iteracion=siguiente_iter,
+            nombre_display=f"{ep.nombre} {siguiente_iter}" if ep else f"Estuchado {siguiente_iter}",
         )
+        # Actualizar nombre_display de la actual si no tiene
+        if not row.nombre_display:
+            ep_nombre = ep.nombre if ep else "Estuchado"
+            row.nombre_display = f"{ep_nombre} 1"
         db.add(nuevo)
         db.commit()
         db.refresh(nuevo)
-        return {"ok": True, "todas_completadas": False, "nuevo_id": nuevo.id}
+        return {"ok": True, "todas_completadas": False, "es_parcial": True, "nuevo_id": nuevo.id}
 
     db.commit()
     pendientes = db.query(EtapaOrden).filter(
         EtapaOrden.orden_id == row.orden_id,
-        EtapaOrden.fecha_fin == None,
+        EtapaOrden.estado != "completada",
     ).count()
-    return {"ok": True, "todas_completadas": pendientes == 0}
+
+    todas_completadas = pendientes == 0
+    return {"ok": True, "todas_completadas": todas_completadas, "es_parcial": False}
 
 
-# ── API: revertir etapa ───────────────────────────────────────────────────────
+
+
+# ── API: revertir orden entregada → en_proceso (admin) ───────────────────────
+
+@router.patch("/api/ordenes/{orden_id}/revertir-entregada")
+async def api_revertir_orden_entregada(
+    orden_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    _exigir(user, "accion_admin")
+    orden = _get_or_404(db, orden_id)
+    if orden.estado != "entregada":
+        raise HTTPException(status_code=422, detail="La orden no está en estado Terminado.")
+    orden.estado = "en_proceso"
+    orden.fecha_terminado = None
+    orden.ultima_modificacion_por = user["id"]
+    orden.ultima_modificacion_fecha = now_ar()
+    db.add(HistorialEstado(
+        orden_id=orden_id,
+        estado_anterior="entregada",
+        estado_nuevo="en_proceso",
+        usuario_id=user["id"],
+        fecha=now_ar(),
+        observaciones="Reversión de orden Terminada a En Proceso por admin.",
+    ))
+    db.commit()
+    return {"ok": True}
+
+
+# ── API: revertir etapa (admin) ───────────────────────────────────────────────
 
 @router.patch("/api/etapas-proceso/{etapa_orden_id}/revertir")
 async def api_revertir_etapa(
@@ -833,33 +979,90 @@ async def api_revertir_etapa(
     db: Session = Depends(get_db),
     user: dict = Depends(require_auth),
 ):
-    _exigir(user, "manejar_etapas")
+    _exigir(user, "accion_admin")
     row = db.query(EtapaOrden).filter(EtapaOrden.id == etapa_orden_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Etapa no encontrada.")
-
     try:
         body = await request.json()
     except Exception:
         body = {}
-    tipo = body.get("tipo", "fin")  # 'inicio' | 'fin'
+    tipo = body.get("tipo", "fin")
 
+    orden = db.query(Orden).filter(Orden.id == row.orden_id).first()
     if tipo == "inicio":
         row.fecha_inicio = None
         row.fecha_fin = None
+        row.estado = "pendiente"
+        row.area_id = None
         row.usuario_inicio_id = None
+        row.usuario_fin_id = None
     else:
-        # Si era un estuchado parcial, eliminar la siguiente EtapaOrden no iniciada
-        siguiente = db.query(EtapaOrden).filter(
-            EtapaOrden.orden_id == row.orden_id,
-            EtapaOrden.etapa_produccion_id == row.etapa_produccion_id,
-            EtapaOrden.id > row.id,
-            EtapaOrden.fecha_inicio == None,
-        ).first()
-        if siguiente:
-            db.delete(siguiente)
         row.fecha_fin = None
+        row.estado = "en_curso"
+        row.usuario_fin_id = None
+        # Si la orden quedó entregada por esta etapa, volver a en_proceso
+        if orden and orden.estado == "entregada":
+            orden.estado = "en_proceso"
+            orden.fecha_terminado = None
+            db.add(HistorialEstado(
+                orden_id=row.orden_id,
+                estado_anterior="entregada",
+                estado_nuevo="en_proceso",
+                usuario_id=user["id"],
+                fecha=now_ar(),
+                observaciones=f"Reversión de etapa por admin (id={etapa_orden_id})",
+            ))
 
+    db.commit()
+    return {"ok": True}
+
+
+# ── API: eliminar etapa (admin) ───────────────────────────────────────────────
+
+@router.delete("/api/etapas-proceso/{etapa_orden_id}")
+async def api_eliminar_etapa(
+    etapa_orden_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    _exigir(user, "accion_admin")
+    row = db.query(EtapaOrden).filter(EtapaOrden.id == etapa_orden_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Etapa no encontrada.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+# ── API: eliminar entrega (admin) ─────────────────────────────────────────────
+
+@router.delete("/api/entregas/{entrega_id}")
+async def api_eliminar_entrega(
+    entrega_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    _exigir(user, "accion_admin")
+    entrega = db.query(Entrega).filter(Entrega.id == entrega_id).first()
+    if not entrega:
+        raise HTTPException(status_code=404, detail="Entrega no encontrada.")
+
+    orden = db.query(Orden).filter(Orden.id == entrega.orden_id).first()
+    # Si era entrega final y la orden está en entregada, volver a en_proceso
+    if entrega.es_entrega_final and orden and orden.estado == "entregada":
+        orden.estado = "en_proceso"
+        orden.fecha_terminado = None
+        db.add(HistorialEstado(
+            orden_id=entrega.orden_id,
+            estado_anterior="entregada",
+            estado_nuevo="en_proceso",
+            usuario_id=user["id"],
+            fecha=now_ar(),
+            observaciones=f"Entrega final eliminada por admin (entrega id={entrega_id})",
+        ))
+
+    db.delete(entrega)
     db.commit()
     return {"ok": True}
 
@@ -877,19 +1080,83 @@ async def api_eliminar_orden(
 ):
     _exigir(user, "eliminar_orden")
     orden = _get_or_404(db, orden_id)
-    if orden.estado not in ESTADOS_BORRABLES:
+    es_admin = user.get("permisos", {}).get("accion_admin", False)
+    if not es_admin and orden.estado not in ESTADOS_BORRABLES:
         raise HTTPException(
             status_code=422,
             detail=f"No se puede eliminar una orden en estado '{orden.estado}'."
         )
     db.query(Faltante).filter(Faltante.orden_id == orden_id).delete()
     db.query(HistorialEstado).filter(HistorialEstado.orden_id == orden_id).delete()
+    db.query(EtapaOrden).filter(EtapaOrden.orden_id == orden_id).delete()
+    db.query(Entrega).filter(Entrega.orden_id == orden_id).delete()
     db.delete(orden)
     db.commit()
     return {"ok": True}
 
 
+# ── API: Gantt ────────────────────────────────────────────────────────────────
+
+@router.get("/api/gantt")
+async def api_gantt(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    ordenes = (
+        db.query(Orden)
+        .filter(Orden.estado.in_(["en_proceso", "emitido", "para_emitir"]))
+        .order_by(Orden.fecha_carga.desc())
+        .all()
+    )
+    result = []
+    for o in ordenes:
+        etapas = (
+            db.query(EtapaOrden)
+            .filter(EtapaOrden.orden_id == o.id)
+            .order_by(EtapaOrden.id)
+            .all()
+        )
+        etapas_data = []
+        for e in etapas:
+            ep = e.etapa_producto
+            areas_posibles = [{"id": a.id, "nombre": a.nombre} for a in ep.areas] if ep else []
+            etapas_data.append({
+                "id":             e.id,
+                "nombre":         ep.nombre if ep else "—",
+                "nombre_display": e.nombre_display,
+                "iteracion":      e.iteracion,
+                "area":           e.area.nombre if e.area else None,
+                "area_id":        e.area_id,
+                "areas_posibles": areas_posibles,
+                "estado":         e.estado,
+                "fecha_inicio":   e.fecha_inicio.isoformat() if e.fecha_inicio else None,
+                "fecha_fin":      e.fecha_fin.isoformat() if e.fecha_fin else None,
+            })
+        result.append({
+            "id":                   o.id,
+            "op":                   o.op,
+            "lote_pt":              o.lote_pt,
+            "codigo_producto":      o.codigo_producto,
+            "descripcion_producto": o.descripcion_producto,
+            "cantidad":             o.cantidad,
+            "unidad":               o.unidad.value if o.unidad else None,
+            "estado":               o.estado,
+            "fecha_inicio":         o.fecha_inicio_produccion.isoformat() if o.fecha_inicio_produccion else None,
+            "etapas":               etapas_data,
+        })
+    return result
+
+
 # ── Vistas HTML ────────────────────────────────────────────────────────────────
+
+@router.get("/gantt", response_class=HTMLResponse)
+async def page_gantt(
+    request: Request,
+    user: dict = Depends(require_auth),
+):
+    return templates.TemplateResponse(request, "gantt.html", {"user": user})
+
 
 @router.get("/ordenes", response_class=HTMLResponse)
 async def page_ordenes(
@@ -933,7 +1200,7 @@ async def page_crear_orden(
         return RedirectResponse(url="/ordenes", status_code=302)
 
     # Parsear fecha de carga
-    fc = datetime.utcnow()
+    fc = now_ar()
     if fecha_carga:
         try:
             fc = datetime.fromisoformat(fecha_carga)
@@ -965,7 +1232,7 @@ async def page_crear_orden(
         estado_anterior=None,
         estado_nuevo="revisar",
         usuario_id=user["id"],
-        fecha=datetime.utcnow(),
+        fecha=now_ar(),
         observaciones="Orden creada.",
     )
     db.add(hist)
@@ -1008,7 +1275,7 @@ def _fmt_mes_anio(d):
     return f"{d.month:02d}/{d.year}"
 
 
-def _orden_dict(o: Orden, creado_por_nombre: str = None) -> dict:
+def _orden_dict(o: Orden, creado_por_nombre: str = None, etapa_actual: str = None, etapa_estado: str = None, etapa_siguiente: str = None) -> dict:
     return {
         "id":                   o.id,
         "fecha_carga":          _fmt(o.fecha_carga),
@@ -1022,6 +1289,9 @@ def _orden_dict(o: Orden, creado_por_nombre: str = None) -> dict:
         "unidad":               o.unidad,
         "estado":               o.estado,
         "subestado":            o.subestado,
+        "etapa_actual":         etapa_actual,
+        "etapa_estado":         etapa_estado,
+        "etapa_siguiente":      etapa_siguiente,
         "fecha_inicio_produccion": _fmt(o.fecha_inicio_produccion),
         "fecha_terminado":      _fmt(o.fecha_terminado),
         "cantidad_obtenida":    o.cantidad_obtenida,

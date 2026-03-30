@@ -89,6 +89,8 @@
         {% endif %}
         {% if user.permisos.eliminar_orden and orden.estado in ('revisar', 'faltante') %}
         <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" onclick="eliminarOrden()">🗑 Eliminar</button>
+        {% elif user.permisos.accion_admin and orden.estado not in ('revisar', 'faltante') %}
+        <button class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" onclick="eliminarOrden()">🗑 Eliminar (admin)</button>
         {% endif %}
         <a href="/ordenes" class="btn btn-secondary">← Volver</a>
       </div>
@@ -136,25 +138,99 @@
     <!-- PARA EMITIR -->
     {% elif e == 'para_emitir' %}
     <div class="estado-panel panel-para_emitir" id="panelEstado">
-      <div class="panel-title">📋 Preparación para emitir</div>
-      <ul class="checklist" id="checklistEmitir">
-        <li>
-          <span id="chkOP" class="check-no">✗</span>
-          <span>N° OP asignado <span class="text-muted text-sm" id="valOP"></span></span>
-        </li>
-        <li>
-          <span id="chkLoteGranel" class="check-no">✗</span>
-          <span>Lote Granel asignado <span class="text-muted text-sm" id="valLoteGranel"></span></span>
-        </li>
-        <li>
-          <span id="chkLotePT" class="check-no">✗</span>
-          <span>Lote PT asignado <span class="text-muted text-sm" id="valLotePT"></span></span>
-        </li>
-        <li>
-          <span id="chkVenc" class="check-no">✗</span>
-          <span>Vencimiento cargado <span class="text-muted text-sm" id="valVenc"></span></span>
-        </li>
-      </ul>
+      <div class="panel-title">📋 Completar datos para emitir</div>
+      <p style="font-size:.82rem;color:#6d28d9;margin:-.25rem 0 1rem">
+        Completá los cuatro campos para habilitar la emisión.
+      </p>
+
+      {% if user.permisos.editar_datos_orden %}
+      <!-- Formulario de emisión inline -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;margin-bottom:1.25rem">
+
+        <!-- OP -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">
+            🔢 N° Orden de Producción (OP)
+          </div>
+          <div style="position:relative">
+            <input type="text" id="emitirOP"
+                   value="{{ orden.op or '' }}"
+                   placeholder="Ej: OP-2025-001"
+                   style="width:100%;padding:.55rem .75rem;border:2px solid #c4b5fd;border-radius:8px;font-size:.9rem;font-family:monospace;background:#faf5ff;color:#3b0764;outline:none;box-sizing:border-box"
+                   onfocus="this.style.borderColor='#7c3aed'"
+                   onblur="this.style.borderColor=this.value.trim()?'#7c3aed':'#c4b5fd';autoGuardarEmision()"
+                   oninput="verificarEmision()">
+            <span id="iconOP" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);font-size:.9rem">
+              {{ '✅' if orden.op else '⬜' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Lote Granel -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">
+            🧪 Lote Granel
+          </div>
+          <div style="position:relative">
+            <input type="text" id="emitirLoteGranel"
+                   value="{{ orden.lote_granel or '' }}"
+                   placeholder="Ej: LG-2025-001"
+                   style="width:100%;padding:.55rem .75rem;border:2px solid #c4b5fd;border-radius:8px;font-size:.9rem;font-family:monospace;text-transform:uppercase;background:#faf5ff;color:#3b0764;outline:none;box-sizing:border-box"
+                   onfocus="this.style.borderColor='#7c3aed'"
+                   onblur="this.style.borderColor=this.value.trim()?'#7c3aed':'#c4b5fd';autoGuardarEmision()"
+                   oninput="verificarEmision()">
+            <span id="iconLG" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);font-size:.9rem">
+              {{ '✅' if orden.lote_granel else '⬜' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Lote PT -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">
+            📦 Lote Producto Terminado
+          </div>
+          <div style="position:relative">
+            <input type="text" id="emitirLotePT"
+                   value="{{ orden.lote_pt or '' }}"
+                   placeholder="Ej: LPT-2025-001"
+                   style="width:100%;padding:.55rem .75rem;border:2px solid #c4b5fd;border-radius:8px;font-size:.9rem;font-family:monospace;text-transform:uppercase;background:#faf5ff;color:#3b0764;outline:none;box-sizing:border-box"
+                   onfocus="this.style.borderColor='#7c3aed'"
+                   onblur="this.style.borderColor=this.value.trim()?'#7c3aed':'#c4b5fd';autoGuardarEmision()"
+                   oninput="verificarEmision()">
+            <span id="iconPT" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);font-size:.9rem">
+              {{ '✅' if orden.lote_pt else '⬜' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Vencimiento -->
+        <div>
+          <div style="font-size:.7rem;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.35rem">
+            📅 Vencimiento
+          </div>
+          <div style="position:relative">
+            <input type="text" id="emitirVenc"
+                   value="{{ orden.fecha_vencimiento.strftime('%m/%Y') if orden.fecha_vencimiento else '' }}"
+                   placeholder="MM/AAAA"
+                   maxlength="7"
+                   style="width:100%;padding:.55rem .75rem;border:2px solid #c4b5fd;border-radius:8px;font-size:.9rem;font-family:monospace;background:#faf5ff;color:#3b0764;outline:none;box-sizing:border-box"
+                   onfocus="this.style.borderColor='#7c3aed'"
+                   onblur="this.style.borderColor=this.value.trim()?'#7c3aed':'#c4b5fd';autoGuardarEmision()"
+                   oninput="fmtVencEmision(this);verificarEmision()">
+            <span id="iconVenc" style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);font-size:.9rem">
+              {{ '✅' if orden.fecha_vencimiento else '⬜' }}
+            </span>
+          </div>
+          <div style="font-size:.7rem;color:#a78bfa;margin-top:.25rem">Formato: MM/AAAA</div>
+        </div>
+
+      </div>
+
+      <div id="msgGuardado" style="font-size:.78rem;color:#7c3aed;min-height:1.2rem;margin-bottom:.5rem"></div>
+      <div id="alertVencEmision" style="display:none;font-size:.78rem;color:#dc2626;margin-bottom:.5rem"></div>
+      {% endif %}
+
       {% if user.permisos.cambiar_estado %}
       <div class="panel-actions">
         <button class="btn btn-secondary" onclick="avanzarEstado('revisar','Vuelve a revisión.')">← Volver a Revisar</button>
@@ -168,7 +244,7 @@
     <!-- EMITIDO -->
     {% elif e == 'emitido' %}
     <div class="estado-panel panel-emitido" id="panelEstado">
-      <div class="panel-title">📤 Orden emitida — aguardando recepción</div>
+      <div class="panel-title">🔬 Enviada a QA — aguardando recepción</div>
       <p style="font-size:.875rem;color:var(--gray-600)">
         La orden fue emitida. Al recibirla en producción, confirmá la recepción para iniciar los subprocesos.
       </p>
@@ -185,9 +261,9 @@
     {% elif e == 'en_proceso' %}
     <div class="estado-panel panel-en_proceso" id="panelEstado">
       <div class="panel-title">⚙ En producción</div>
-      {% if user.permisos.manejar_etapas or user.permisos.registrar_entrega %}
+      {% if user.permisos.manejar_etapas or user.permisos.registrar_entrega or user.permisos.accion_admin %}
       <div class="panel-actions">
-        {% if user.permisos.registrar_entrega %}
+        {% if user.permisos.registrar_entrega or user.permisos.accion_admin %}
         <button class="btn btn-secondary" id="btnEntregaParcial" onclick="abrirModalEntrega('parcial')" style="display:none">📦 Registrar entrega parcial</button>
         <button class="btn btn-primary" id="btnFinalizarProduccion" onclick="abrirModalTerminar()" style="display:none">
           ✓ Finalizar producción
@@ -207,18 +283,17 @@
       </div>
     </div>
 
-    <!-- TERMINADA -->
+    <!-- TERMINADA (legado) -->
     {% elif e == 'terminada' %}
     <div class="estado-panel panel-terminada" id="panelEstado">
-      <div class="panel-title">✅ Producción finalizada</div>
+      <div class="panel-title">⚠ Estado legado — Producción finalizada</div>
       <p style="font-size:.875rem;color:var(--gray-600)">
         Cantidad obtenida: <strong>{{ (orden.cantidad_obtenida | int) if orden.cantidad_obtenida else '—' }} {{ orden.unidad.value | fmt_unidad }}</strong>
         {% if orden.rendimiento %} · Rendimiento: <strong>{{ orden.rendimiento }}%</strong>{% endif %}
       </p>
       {% if user.permisos.registrar_entrega %}
       <div class="panel-actions">
-        <button class="btn btn-secondary" onclick="abrirModalEntrega('normal')">+ Registrar entrega</button>
-        <button class="btn btn-primary" onclick="avanzarEstado('entregada','Entrega total registrada.')">✓ Marcar como Entregada</button>
+        <button class="btn btn-primary" onclick="avanzarEstado('entregada','Orden terminada.')">✓ Marcar como Terminado</button>
       </div>
       {% endif %}
     </div>
@@ -226,8 +301,14 @@
     <!-- ENTREGADA / CANCELADA -->
     {% elif e == 'entregada' %}
     <div class="estado-panel panel-entregada">
-      <div class="panel-title">🎉 Orden entregada</div>
-      <p style="font-size:.875rem;color:var(--gray-600)">Esta orden está completa y entregada.</p>
+      <div class="panel-title">✅ Orden terminada</div>
+      <p style="font-size:.875rem;color:var(--gray-600)">Esta orden está completa y terminada.</p>
+      {% if user.permisos.accion_admin %}
+      <div class="panel-actions">
+        <button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d"
+                onclick="adminRevertirOrden()">↩ Revertir a En Proceso (admin)</button>
+      </div>
+      {% endif %}
     </div>
     {% elif e == 'cancelada' %}
     <div class="estado-panel panel-cancelada">
@@ -240,8 +321,8 @@
       <div class="card-header">
         <span class="card-title">Datos de la orden</span>
         <span class="badge badge-{{ orden.estado }}" style="font-size:.82rem">
-          {{ {'revisar':'Revisar','faltante':'Faltante','para_emitir':'Para Emitir','emitido':'Emitido',
-              'en_proceso':'En Proceso','terminada':'Terminada','entregada':'Entregada','cancelada':'Cancelada'}
+          {{ {'revisar':'Revisar','faltante':'Faltante','para_emitir':'Para Emitir','emitido':'Enviado a QA',
+              'en_proceso':'En Proceso','terminada':'Prod. Finalizada','entregada':'Terminado','cancelada':'Cancelada'}
              .get(orden.estado, orden.estado) }}
         </span>
       </div>
@@ -252,7 +333,7 @@
           <div class="detalle-item"><div class="di-label">Lote Granel</div><div class="di-value font-mono" id="dispLoteGranel">{{ orden.lote_granel or '—' }}</div></div>
           <div class="detalle-item"><div class="di-label">Lote PT</div><div class="di-value font-mono" id="dispLotePT">{{ orden.lote_pt or '—' }}</div></div>
           <div class="detalle-item"><div class="di-label">Vencimiento</div><div class="di-value" id="dispVenc">{{ orden.fecha_vencimiento.strftime('%m/%Y') if orden.fecha_vencimiento else '—' }}</div></div>
-          <div class="detalle-item"><div class="di-label">Cantidad solicitada</div><div class="di-value">{{ orden.cantidad | int }} {{ orden.unidad.value | fmt_unidad }}</div></div>
+          <div class="detalle-item"><div class="di-label">Cantidad solicitada</div><div class="di-value" id="dispCantidad">{{ orden.cantidad | int }} {{ orden.unidad.value | fmt_unidad }}</div></div>
           {% if orden.cantidad_obtenida %}
           <div class="detalle-item"><div class="di-label">Cantidad obtenida</div><div class="di-value">{{ orden.cantidad_obtenida | int }} {{ orden.unidad.value | fmt_unidad }}</div></div>
           <div class="detalle-item"><div class="di-label">Rendimiento</div><div class="di-value">{{ orden.rendimiento }}%</div></div>
@@ -322,25 +403,34 @@
   </main>
 </div>
 
-<!-- Modal: editar datos (OP, lotes, vencimiento) -->
+<!-- Modal: editar datos (OP, lotes, vencimiento, cantidad) -->
 <div class="modal-overlay" id="modalDatos">
   <div class="modal">
     <h3>Editar datos de la orden</h3>
-    <div class="form-group">
-      <label>N° OP</label>
-      <input type="text" id="inOP" placeholder="ej: OP-2025-001">
-    </div>
-    <div class="form-group">
-      <label>Lote Granel</label>
-      <input type="text" id="inLoteGranel" placeholder="ej: LG-2025-001" style="text-transform:uppercase">
-    </div>
-    <div class="form-group">
-      <label>Lote PT</label>
-      <input type="text" id="inLotePT" placeholder="ej: LPT-2025-001" style="text-transform:uppercase">
-    </div>
-    <div class="form-group">
-      <label>Vencimiento (MM/AAAA)</label>
-      <input type="text" id="inVenc" placeholder="ej: 06/2027" maxlength="7" oninput="fmtVenc(this)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem 1rem">
+      <div class="form-group" style="margin:0">
+        <label>N° OP</label>
+        <input type="text" id="inOP" placeholder="ej: OP-2025-001">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Cantidad a producir</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input type="number" id="inCantidad" min="0.1" step="0.1" inputmode="decimal" style="flex:1">
+          <span id="inCantidadUnidad" style="font-weight:700;color:var(--gray-600);white-space:nowrap"></span>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Lote Granel</label>
+        <input type="text" id="inLoteGranel" placeholder="ej: LG-2025-001" style="text-transform:uppercase">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>Lote PT</label>
+        <input type="text" id="inLotePT" placeholder="ej: LPT-2025-001" style="text-transform:uppercase">
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label>Vencimiento (MM/AAAA)</label>
+        <input type="text" id="inVenc" placeholder="ej: 06/2027" maxlength="7" oninput="fmtVenc(this)">
+      </div>
     </div>
     <div id="alertDatos" class="alert alert-error" style="display:none;margin-top:.75rem"></div>
     <div class="modal-footer">
@@ -472,9 +562,13 @@
 <div class="modal-overlay" id="modalTerminar">
   <div class="modal">
     <h3>Finalizar producción</h3>
-    <div class="form-group">
-      <label>Cantidad obtenida *</label>
-      <input type="number" id="cantObtenida" step="1" min="0" placeholder="Ingresá la cantidad producida">
+    <div style="background:var(--gray-50);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.875rem;display:grid;grid-template-columns:1fr 1fr;gap:.4rem .75rem">
+      <span style="color:var(--gray-500)">Total entregado</span>
+      <span id="resTermTotalEntregado" style="font-weight:600;text-align:right">—</span>
+      <span style="color:var(--gray-500)">Muestras de calidad</span>
+      <span id="resTermMuestras" style="font-weight:600;text-align:right;color:#d97706">—</span>
+      <span style="color:var(--gray-500);font-weight:600">Cantidad obtenida total</span>
+      <span id="resTermTotal" style="font-weight:700;text-align:right;color:var(--primary)">—</span>
     </div>
     <div class="form-group">
       <label>Observaciones</label>
@@ -514,21 +608,18 @@
 
 <!-- Modal: estuchado parcial o final -->
 <div class="modal-overlay" id="modalEstuchadoParcial">
-  <div class="modal" style="max-width:420px">
+  <div class="modal" style="max-width:400px">
     <h3 id="tituloModalEstuchado">Finalizar Estuchado</h3>
-    <p style="font-size:.85rem;color:var(--gray-500);margin:.25rem 0 1.25rem">
-      Seleccioná el tipo de estuchado:
-    </p>
-    <div style="display:flex;flex-direction:column;gap:.75rem">
+    <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem">
       <button class="btn btn-secondary" style="text-align:left;padding:.75rem 1rem"
               onclick="confirmarCompletarEtapa(true)">
         <div style="font-weight:700;margin-bottom:.2rem">📦 Parcial</div>
-        <div style="font-size:.8rem;color:var(--gray-500)">La etapa quedará disponible para el próximo estuchado</div>
+        <div style="font-size:.8rem;color:var(--gray-500)">Continúa con el siguiente estuchado</div>
       </button>
       <button class="btn btn-primary" style="text-align:left;padding:.75rem 1rem"
               onclick="confirmarCompletarEtapa(false)">
         <div style="font-weight:700;margin-bottom:.2rem">✓ Final</div>
-        <div style="font-size:.8rem;opacity:.8">Este es el último estuchado — se registrará la entrega final</div>
+        <div style="font-size:.8rem;opacity:.8">Último estuchado — la orden quedará terminada</div>
       </button>
       <button class="btn" style="margin-top:.1rem" onclick="cerrarModal('modalEstuchadoParcial')">
         Cancelar
@@ -536,6 +627,25 @@
     </div>
   </div>
 </div>
+
+<!-- Modal: seleccionar área (cuando hay múltiples áreas posibles) -->
+<div class="modal-overlay" id="modalAreaEtapa">
+  <div class="modal" style="max-width:360px">
+    <h3 id="tituloModalAreaEtapa">Iniciar etapa — Seleccioná el área</h3>
+    <div class="form-group">
+      <label>Área *</label>
+      <select id="inAreaEtapa" style="width:100%">
+        <option value="">— Seleccionar —</option>
+      </select>
+    </div>
+    <div id="alertAreaEtapa" class="alert alert-error" style="display:none;margin-top:.5rem"></div>
+    <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1.5rem">
+      <button class="btn btn-secondary" onclick="cerrarModal('modalAreaEtapa')">Cancelar</button>
+      <button class="btn btn-primary" id="btnConfirmarArea" onclick="confirmarSeleccionArea()">▶ Iniciar</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Modal: registrar entrega -->
 <div class="modal-overlay" id="modalEntrega">
@@ -570,8 +680,9 @@
         Entrega final
       </label>
     </div>
+    <div id="alertEntrega" style="display:none;background:#fee2e2;color:#991b1b;border-radius:6px;padding:.5rem .75rem;font-size:.85rem;margin-bottom:.5rem"></div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="cerrarModal('modalEntrega')">Cancelar</button>
+      <button class="btn btn-secondary" onclick="cancelarModalEntrega()">Cancelar</button>
       <button class="btn btn-primary" onclick="confirmarEntrega()">Registrar entrega</button>
     </div>
   </div>
@@ -586,10 +697,11 @@
   const PERMISOS       = {{ user.permisos | tojson }};
   const puedeOperar    = PERMISOS.manejar_etapas || PERMISOS.agregar_faltante;
   const puedeSupervisar = PERMISOS.registrar_entrega || PERMISOS.cambiar_estado;
+  const esAdmin        = PERMISOS.accion_admin === true;
   const LABELS   = {
     revisar:'Revisar', faltante:'Faltante', para_emitir:'Para Emitir',
-    emitido:'Emitido', en_proceso:'En Proceso', terminada:'Terminada',
-    entregada:'Entregada', cancelada:'Cancelada'
+    emitido:'Enviado a QA', en_proceso:'En Proceso', terminada:'Prod. Finalizada',
+    entregada:'Terminado', cancelada:'Cancelada'
   };
 
   // Totales de la orden (actualizados al cargar detalle)
@@ -606,7 +718,7 @@
   // ── Carga inicial ─────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     cargarDetalle();
-    if (ESTADO === 'para_emitir') actualizarChecklist();
+    if (ESTADO === 'para_emitir') verificarEmision();
     cargarProyeccion();
     if (ESTADO === 'en_proceso') cargarEtapasProceso();
   });
@@ -633,28 +745,86 @@
     }
   }
 
-  // ── Checklist para_emitir ─────────────────────────────────────────────────
-  function actualizarChecklist() {
-    const op    = document.getElementById('dispOP')?.textContent.trim();
-    const lg    = document.getElementById('dispLoteGranel')?.textContent.trim();
-    const lpt   = document.getElementById('dispLotePT')?.textContent.trim();
-    const venc  = document.getElementById('dispVenc')?.textContent.trim();
+  // ── Panel para_emitir — inline ───────────────────────────────────────────
+  function fmtVencEmision(input) {
+    let v = input.value.replace(/[^\d]/g, '');
+    if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2,6);
+    input.value = v;
+  }
 
-    const set = (id, valId, val) => {
-      const ok = val && val !== '—';
-      const el = document.getElementById(id);
-      const ve = document.getElementById(valId);
-      if (el) { el.textContent = ok ? '✓' : '✗'; el.className = ok ? 'check-ok' : 'check-no'; }
-      if (ve) ve.textContent = ok ? `(${val})` : '';
-      return ok;
-    };
-    const a = set('chkOP',         'valOP',         op);
-    const b = set('chkLoteGranel', 'valLoteGranel', lg);
-    const c = set('chkLotePT',     'valLotePT',     lpt);
-    const d = set('chkVenc',       'valVenc',        venc);
+  function _vencValido(venc) {
+    if (!venc || venc.length !== 7) return false;
+    const partes = venc.split('/');
+    if (partes.length !== 2) return false;
+    const mes = parseInt(partes[0]), anio = parseInt(partes[1]);
+    if (isNaN(mes) || isNaN(anio) || mes < 1 || mes > 12) return false;
+    const hoy = new Date();
+    const minAnio = hoy.getFullYear(), minMes = hoy.getMonth() + 1;
+    return anio > minAnio || (anio === minAnio && mes >= minMes);
+  }
+
+  function verificarEmision() {
+    const op   = (document.getElementById('emitirOP')?.value ?? '').trim();
+    const lg   = (document.getElementById('emitirLoteGranel')?.value ?? '').trim();
+    const lpt  = (document.getElementById('emitirLotePT')?.value ?? '').trim();
+    const venc = (document.getElementById('emitirVenc')?.value ?? '').trim();
+    const vencOk = _vencValido(venc);
+
+    // Mostrar error de vencimiento si está completo pero es inválido
+    const alertVenc = document.getElementById('alertVencEmision');
+    if (alertVenc) {
+      if (venc.length === 7 && !vencOk) {
+        alertVenc.textContent = '⚠ El vencimiento no puede ser anterior al mes actual.';
+        alertVenc.style.display = '';
+      } else {
+        alertVenc.style.display = 'none';
+      }
+    }
+
+    const campos = [
+      { ok: !!op,    iconId: 'iconOP' },
+      { ok: !!lg,    iconId: 'iconLG' },
+      { ok: !!lpt,   iconId: 'iconPT' },
+      { ok: vencOk,  iconId: 'iconVenc' },
+    ];
+    campos.forEach(c => {
+      const el = document.getElementById(c.iconId);
+      if (el) el.textContent = c.ok ? '✅' : '⬜';
+    });
 
     const btn = document.getElementById('btnEmitir');
-    if (btn) btn.disabled = !(a && b && c && d);
+    if (btn) btn.disabled = !campos.every(c => c.ok);
+  }
+
+  let _autoGuardandoEmision = false;
+  async function autoGuardarEmision() {
+    if (_autoGuardandoEmision) return;
+    const op   = (document.getElementById('emitirOP')?.value ?? '').trim();
+    const lg   = (document.getElementById('emitirLoteGranel')?.value ?? '').trim();
+    const lpt  = (document.getElementById('emitirLotePT')?.value ?? '').trim();
+    const venc = (document.getElementById('emitirVenc')?.value ?? '').trim();
+    if (!op && !lg && !lpt && !venc) return;
+
+    _autoGuardandoEmision = true;
+    const msg = document.getElementById('msgGuardado');
+    if (msg) msg.textContent = 'Guardando…';
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/datos`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ op, lote_granel: lg, lote_pt: lpt, fecha_vencimiento: venc }),
+    });
+    _autoGuardandoEmision = false;
+    if (res.ok) {
+      const data = await res.json();
+      // Sincronizar dispXX (usados en "datos de la orden")
+      if (document.getElementById('dispOP'))         document.getElementById('dispOP').textContent         = data.op              || '—';
+      if (document.getElementById('dispLoteGranel')) document.getElementById('dispLoteGranel').textContent = data.lote_granel     || '—';
+      if (document.getElementById('dispLotePT'))     document.getElementById('dispLotePT').textContent     = data.lote_pt         || '—';
+      if (document.getElementById('dispVenc'))       document.getElementById('dispVenc').textContent       = data.fecha_vencimiento || '—';
+      if (msg) { msg.textContent = '✓ Guardado'; setTimeout(() => { if (msg) msg.textContent = ''; }, 2000); }
+    } else {
+      if (msg) msg.textContent = '⚠ Error al guardar';
+    }
   }
 
   // ── Avanzar estado (genérico) ─────────────────────────────────────────────
@@ -996,16 +1166,15 @@
 
   // ── Finalizar producción ──────────────────────────────────────────────────
   async function confirmarTerminar() {
-    const cant = Math.round(parseFloat(document.getElementById('cantObtenida').value));
-    if (!cant || cant <= 0) {
-      const al = document.getElementById('alertTerminar');
-      al.textContent = 'Ingresá la cantidad obtenida.'; al.style.display = ''; return;
-    }
+    const entregas  = _ordenData.entregas ?? [];
+    const entregado = entregas.reduce((s, e) => s + (e.cantidad_entregada ?? 0), 0);
+    const muestras  = entregas.reduce((s, e) => s + (e.muestras_control ?? 0), 0);
+    const cant      = Math.round(entregado + muestras);
     const res = await fetch(`/api/ordenes/${ORDEN_ID}/estado`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        estado: 'terminada',
+        estado: 'entregada',
         cantidad_obtenida: cant,
         observaciones: document.getElementById('obsTerminar').value.trim() || null,
       }),
@@ -1015,9 +1184,28 @@
   }
 
   // ── Entrega ───────────────────────────────────────────────────────────────
+  let _entregaObligatoria = false;
+
+  function cancelarModalEntrega() {
+    const cant = parseInt(document.getElementById('cantEntrega').value);
+    if (_entregaObligatoria && (!cant || cant <= 0)) {
+      const al = document.getElementById('alertEntrega');
+      al.textContent = 'Debés ingresar la cantidad antes de salir. Si no querés registrar entrega ahora, ingresá 0 y confirmá.';
+      al.style.display = '';
+      return;
+    }
+    _entregaObligatoria = false;
+    cerrarModal('modalEntrega');
+  }
+
   async function confirmarEntrega() {
     const cant = parseInt(document.getElementById('cantEntrega').value);
-    if (!cant || cant <= 0) { alert('Ingresá una cantidad válida.'); return; }
+    if (!cant || cant <= 0) {
+      const al = document.getElementById('alertEntrega');
+      al.textContent = 'Ingresá una cantidad válida.';
+      al.style.display = '';
+      return;
+    }
     const muestras = parseInt(document.getElementById('muestrasCC').value) || 0;
     const res = await fetch(`/api/ordenes/${ORDEN_ID}/entregas`, {
       method: 'POST',
@@ -1029,7 +1217,7 @@
         es_entrega_final: document.getElementById('esEntregaFinal').checked,
       }),
     });
-    if (res.ok) location.reload();
+    if (res.ok) { _entregaObligatoria = false; location.reload(); }
     else alert('Error al registrar entrega.');
   }
 
@@ -1040,6 +1228,8 @@
     document.getElementById('inLoteGranel').value = val('dispLoteGranel');
     document.getElementById('inLotePT').value     = val('dispLotePT');
     document.getElementById('inVenc').value       = val('dispVenc');
+    document.getElementById('inCantidad').value = {{ orden.cantidad }};
+    document.getElementById('inCantidadUnidad').textContent = '{{ orden.unidad.value | fmt_unidad }}';
     document.getElementById('alertDatos').style.display = 'none';
     document.getElementById('modalDatos').classList.add('open');
     document.getElementById('inOP').focus();
@@ -1052,22 +1242,30 @@
   }
 
   async function guardarDatos() {
+    const al   = document.getElementById('alertDatos');
     const venc = document.getElementById('inVenc').value.trim();
     if (venc && !/^\d{2}\/\d{4}$/.test(venc)) {
-      const al = document.getElementById('alertDatos');
       al.textContent = 'Vencimiento debe ser MM/AAAA (ej: 06/2027).'; al.style.display = ''; return;
     }
+    const cantRaw = document.getElementById('inCantidad').value.trim();
+    const cant = parseFloat(cantRaw);
+    if (cantRaw && (isNaN(cant) || cant <= 0)) {
+      al.textContent = 'La cantidad debe ser un número mayor a 0.'; al.style.display = ''; return;
+    }
+    al.style.display = 'none';
     const btn = document.getElementById('btnGuardarDatos');
     btn.disabled = true;
+    const body = {
+      op:                document.getElementById('inOP').value.trim(),
+      lote_granel:       document.getElementById('inLoteGranel').value.trim(),
+      lote_pt:           document.getElementById('inLotePT').value.trim(),
+      fecha_vencimiento: venc,
+    };
+    if (cantRaw) body.cantidad = cant;
     const res = await fetch(`/api/ordenes/${ORDEN_ID}/datos`, {
       method: 'PATCH',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        op:                document.getElementById('inOP').value.trim(),
-        lote_granel:       document.getElementById('inLoteGranel').value.trim(),
-        lote_pt:           document.getElementById('inLotePT').value.trim(),
-        fecha_vencimiento: venc,
-      }),
+      body: JSON.stringify(body),
     });
     btn.disabled = false;
     if (res.ok) {
@@ -1076,8 +1274,20 @@
       document.getElementById('dispLoteGranel').textContent = data.lote_granel       || '—';
       document.getElementById('dispLotePT').textContent     = data.lote_pt           || '—';
       document.getElementById('dispVenc').textContent       = data.fecha_vencimiento || '—';
+      if (data.cantidad && document.getElementById('dispCantidad')) {
+        document.getElementById('dispCantidad').textContent =
+          Math.round(data.cantidad).toLocaleString('es-AR') + ' {{ orden.unidad.value | fmt_unidad }}';
+      }
       cerrarModal('modalDatos');
-      if (ESTADO === 'para_emitir') actualizarChecklist();
+      // Sincronizar campos del panel de emisión si estamos en para_emitir
+      if (ESTADO === 'para_emitir') {
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+        setVal('emitirOP',          data.op);
+        setVal('emitirLoteGranel',  data.lote_granel);
+        setVal('emitirLotePT',      data.lote_pt);
+        setVal('emitirVenc',        data.fecha_vencimiento);
+        verificarEmision();
+      }
     } else {
       const e = await res.json();
       const al = document.getElementById('alertDatos');
@@ -1156,9 +1366,10 @@
     const div = document.getElementById('listEntregas');
     if (!lista.length) { div.innerHTML = '<span class="text-muted text-sm">Sin entregas registradas.</span>'; return; }
     const puedeEditar = puedeSupervisar;
+    const mostrarAcciones = puedeEditar || esAdmin;
     div.innerHTML = `
       <table>
-        <thead><tr><th>Fecha</th><th>Cantidad</th><th>Muestras CC</th><th>Remito</th><th>Tipo</th>${puedeEditar ? '<th></th>' : ''}</tr></thead>
+        <thead><tr><th>Fecha</th><th>Cantidad</th><th>Muestras CC</th><th>Remito</th><th>Tipo</th>${mostrarAcciones ? '<th></th>' : ''}</tr></thead>
         <tbody>
           ${lista.map(e => `
             <tr>
@@ -1169,13 +1380,17 @@
               <td>${e.es_entrega_final
                 ? '<span class="badge badge-entregada">Final</span>'
                 : '<span class="badge">Parcial</span>'}</td>
-              ${puedeEditar ? `<td><button class="btn btn-secondary btn-sm"
-                data-id="${e.id}"
-                data-cant="${e.cantidad_entregada}"
-                data-muestras="${e.muestras_control ?? ''}"
-                data-remito="${esc(e.remito ?? '')}"
-                onclick="abrirModalEditarEntrega(this)">
-                ✎ Editar</button></td>` : ''}
+              ${mostrarAcciones ? `<td style="display:flex;gap:.4rem;flex-wrap:wrap">
+                ${puedeEditar ? `<button class="btn btn-secondary btn-sm"
+                  data-id="${e.id}"
+                  data-cant="${e.cantidad_entregada}"
+                  data-muestras="${e.muestras_control ?? ''}"
+                  data-remito="${esc(e.remito ?? '')}"
+                  onclick="abrirModalEditarEntrega(this)">✎ Editar</button>` : ''}
+                ${esAdmin ? `<button class="btn btn-sm"
+                  style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"
+                  onclick="adminEliminarEntrega(${e.id}, ${e.es_entrega_final})">🗑</button>` : ''}
+              </td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -1190,28 +1405,35 @@
     }
     div.innerHTML = `
       <table>
-        <thead><tr><th>Etapa</th><th>Inicio</th><th>Fin</th><th>Usuario</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Etapa</th><th>Inicio</th><th>Fin</th><th>Duración</th><th>Área</th><th>Estado</th></tr></thead>
         <tbody>
-          ${(() => {
-            const conteo = {};
-            lista.forEach(e => { conteo[e.nombre] = (conteo[e.nombre] || 0) + 1; });
-            return lista.map(e => {
-            const completada = !!e.fecha_fin;
-            const enCurso   = !!e.fecha_inicio && !e.fecha_fin;
-            const nombre    = conteo[e.nombre] > 1 ? `${esc(e.nombre)} ${e.iteracion}` : esc(e.nombre);
+          ${lista.map(e => {
+            const completada = e.estado === 'completada' || !!e.fecha_fin;
+            const enCurso   = e.estado === 'en_curso' || (!!e.fecha_inicio && !e.fecha_fin);
+            const nombre    = e.nombre_display || esc(e.nombre);
             let badge;
             if (completada)   badge = '<span class="badge badge-terminada">Completada</span>';
             else if (enCurso) badge = '<span class="badge badge-en_proceso">En curso</span>';
             else              badge = '<span class="badge">Pendiente</span>';
+            let duracion = '—';
+            if (e.fecha_inicio) {
+              const ini = new Date(e.fecha_inicio);
+              const fin = e.fecha_fin ? new Date(e.fecha_fin) : new Date();
+              const mins = Math.round((fin - ini) / 60000);
+              if (mins < 60) duracion = `${mins} min`;
+              else if (mins < 1440) duracion = `${Math.round(mins/60*10)/10} hs`;
+              else duracion = `${Math.floor(mins/1440)}d ${Math.round((mins%1440)/60)}hs`;
+              if (!e.fecha_fin && enCurso) duracion = `⏱ ${duracion}`;
+            }
             return `<tr>
-              <td>${nombre}</td>
+              <td style="font-weight:600">${nombre}</td>
               <td class="text-sm">${e.fecha_inicio ? fmtDate(e.fecha_inicio) : '—'}</td>
               <td class="text-sm">${e.fecha_fin    ? fmtDate(e.fecha_fin)    : '—'}</td>
-              <td class="text-sm">${esc(e.usuario ?? '—')}</td>
+              <td class="text-sm font-mono" style="color:var(--gray-500)">${duracion}</td>
+              <td class="text-sm">${e.area_nombre ? `📍 ${esc(e.area_nombre)}` : '—'}</td>
               <td>${badge}</td>
             </tr>`;
-          }).join('');
-          })()}
+          }).join('')}
         </tbody>
       </table>`;
   }
@@ -1251,7 +1473,18 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function abrirModalInicioProduccion() { document.getElementById('modalInicioProduccion').classList.add('open'); }
-  function abrirModalTerminar()       { document.getElementById('modalTerminar').classList.add('open'); }
+  function abrirModalTerminar() {
+    const entregas   = _ordenData.entregas ?? [];
+    const entregado  = entregas.reduce((s, e) => s + (e.cantidad_entregada ?? 0), 0);
+    const muestras   = entregas.reduce((s, e) => s + (e.muestras_control ?? 0), 0);
+    const total      = entregado + muestras;
+    document.getElementById('resTermTotalEntregado').textContent = entregado ? Math.round(entregado) : '—';
+    document.getElementById('resTermMuestras').textContent       = muestras  ? Math.round(muestras)  : '—';
+    document.getElementById('resTermTotal').textContent          = total     ? Math.round(total)     : '—';
+    document.getElementById('obsTerminar').value = '';
+    document.getElementById('alertTerminar').style.display = 'none';
+    document.getElementById('modalTerminar').classList.add('open');
+  }
   // modo: 'normal' | 'parcial' | 'final'
   function abrirModalEntrega(modo = 'normal') {
     const entregas  = _ordenData.entregas ?? [];
@@ -1284,6 +1517,9 @@
       titulo.textContent = 'Registrar entrega';
     }
 
+    // Si viene de completar estuchado (parcial o final), es obligatorio informar cantidad
+    _entregaObligatoria = (modo === 'parcial' || modo === 'final');
+    document.getElementById('alertEntrega').style.display = 'none';
     document.getElementById('modalEntrega').classList.add('open');
     setTimeout(() => document.getElementById('cantEntrega').focus(), 50);
   }
@@ -1305,7 +1541,7 @@
     const puedeEditar = puedeOperar;
 
     if (!Array.isArray(etapas) || !etapas.length) {
-      body.innerHTML = '<p class="text-muted text-sm" style="padding:1rem">Sin etapas definidas. Verificá que el producto tenga una forma farmacéutica con etapas asignadas.</p>';
+      body.innerHTML = '<p class="text-muted text-sm" style="padding:1rem">Sin etapas definidas. Verificá que el producto tenga etapas asignadas en el maestro de productos.</p>';
       if (btnFinalizar) btnFinalizar.style.display = '';  // sin etapas → siempre disponible
       if (btnEntregaParcial) btnEntregaParcial.style.display = 'none';
       return;
@@ -1319,13 +1555,13 @@
       btnEntregaParcial.style.display = (puedeEditar && estuchadoCompletado) ? '' : 'none';
     }
 
-    const todasCompletadas = etapas.every(e => !!e.fecha_fin);
+    const todasCompletadas = etapas.every(e => e.estado === 'completada');
     if (btnFinalizar) btnFinalizar.style.display = todasCompletadas ? '' : 'none';
 
     body.innerHTML = etapas.map(e => {
-      const completada = !!e.fecha_fin;
-      const enCurso   = !!e.fecha_inicio && !e.fecha_fin;
-      const pendiente = !e.fecha_inicio;
+      const completada = e.estado === 'completada';
+      const enCurso   = e.estado === 'en_curso';
+      const pendiente = e.estado === 'pendiente';
 
       // Nombre con número de iteración si hay más de una para esta etapa
       const mostrarNum = e.total_iteraciones > 1;
@@ -1339,25 +1575,23 @@
       const icono = completada ? '✓' : enCurso ? '▶' : e.orden;
 
       let meta = '';
-      if (completada)   meta = `Inicio: ${fmtDate(e.fecha_inicio)} · Fin: ${fmtDate(e.fecha_fin)}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
-      else if (enCurso) meta = `Iniciada el ${fmtDate(e.fecha_inicio)}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
+      const areaMeta = e.area_nombre ? ` · 📍 ${esc(e.area_nombre)}` : '';
+      if (completada)   meta = `Inicio: ${fmtDate(e.fecha_inicio)} · Fin: ${fmtDate(e.fecha_fin)}${areaMeta}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
+      else if (enCurso) meta = `Iniciada el ${fmtDate(e.fecha_inicio)}${areaMeta}${e.usuario_inicio ? ' · ' + esc(e.usuario_inicio) : ''}`;
 
       let accion = '';
       const esEstuchado = e.nombre.toLowerCase().includes('estuchado');
-      let btnRevertir = '';
-      if (puedeEditar) {
-        if (completada && esEstuchado) {
-          const nomDisplay = mostrarNum ? `${esc(e.nombre)} ${e.iteracion}` : esc(e.nombre);
-          btnRevertir = `<button class="btn btn-sm" title="Cambiar tipo"
-            style="color:#1e40af;background:#eff6ff;border:1px solid #bfdbfe;font-size:.75rem;padding:.15rem .5rem"
-            data-etapaid="${e.id}" data-nombre="${esc(e.nombre)}" data-nom-display="${nomDisplay}"
-            onclick="cambiarTipoEstuchado(this)">↩ Cambiar tipo</button>`;
-        } else {
-          btnRevertir = `<button class="btn btn-sm" title="Revertir"
-            style="color:var(--gray-400);padding:.15rem .45rem;min-width:0;font-size:.85rem"
-            onclick="revertirEtapa(${e.id}, '${completada ? 'fin' : 'inicio'}')">↩</button>`;
-        }
-      }
+
+      const btnRevertirAdmin = esAdmin && !pendiente
+        ? `<button class="btn btn-sm" title="Revertir (admin)"
+             style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-size:.72rem"
+             onclick="adminRevertirEtapa(${e.id},'${completada ? 'fin' : 'inicio'}')">↩ Revertir</button>`
+        : '';
+      const btnEliminarAdmin = esAdmin && pendiente && e.iteracion > 1
+        ? `<button class="btn btn-sm" title="Eliminar etapa (admin)"
+             style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;font-size:.72rem"
+             onclick="adminEliminarEtapa(${e.id}, '${nombreDisplay}')">🗑 Eliminar</button>`
+        : '';
 
       if (completada) {
         let badgeLabel, badgeStyle;
@@ -1368,22 +1602,29 @@
           badgeLabel = 'Completada';
           badgeStyle = 'color:#15803d;background:#dcfce7';
         }
-        accion = `<div style="display:flex;align-items:center;gap:.4rem">
+        accion = `<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
           <span style="font-size:.75rem;font-weight:700;${badgeStyle};padding:.2rem .6rem;border-radius:99px">${badgeLabel}</span>
-          ${btnRevertir}
+          ${btnRevertirAdmin}
         </div>`;
       } else if (enCurso) {
-        accion = `<div style="display:flex;align-items:center;gap:.5rem">
+        const areasJsonEC = JSON.stringify(e.areas_posibles ?? []).replace(/"/g,'&quot;');
+        const btnCambiarArea = puedeEditar && (e.areas_posibles ?? []).length > 1
+          ? `<button class="btn btn-sm" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;font-size:.72rem"
+               onclick="abrirCambiarArea(${e.id}, '${esc(e.nombre)}', ${areasJsonEC}, ${e.area_id ?? 'null'})">✏ Área</button>`
+          : '';
+        accion = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
           <span style="font-size:.75rem;font-weight:700;color:#1e40af;background:#dbeafe;padding:.2rem .7rem;border-radius:99px;white-space:nowrap">● En curso</span>
           ${puedeEditar ? `<button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-weight:700"
-                  data-nombre="${esc(e.nombre)}"
-                  onclick="completarEtapa(${e.id}, this)">✓ Finalizar</button>` : ''}
-          ${btnRevertir}
+                  onclick="abrirCompletarEtapa(${e.id}, '${esc(e.nombre)}')">✓ Finalizar</button>` : ''}
+          ${btnCambiarArea}
+          ${btnRevertirAdmin}
         </div>`;
       } else {
-        accion = puedeEditar
-          ? `<button class="btn btn-primary btn-sm" onclick="iniciarEtapa(${e.id}, this)">▶ Iniciar</button>`
-          : '';
+        const areasJson = JSON.stringify(e.areas_posibles ?? []).replace(/"/g,'&quot;');
+        accion = `<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+          ${puedeEditar ? `<button class="btn btn-primary btn-sm" onclick="abrirIniciarEtapa(${e.id}, '${esc(e.nombre)}', ${areasJson})">▶ Iniciar</button>` : ''}
+          ${btnEliminarAdmin}
+        </div>`;
       }
 
       return `<div style="display:flex;align-items:center;gap:.75rem;padding:.7rem 1.25rem;
@@ -1407,18 +1648,83 @@
 
   let _etapas               = [];
   let _etapaIdPendiente     = null;
-  let _btnEtapaPendiente    = null;
   let _etapaNombrePendiente = '';
 
-  async function iniciarEtapa(etapaOrdenId, btn) {
-    const otraEnCurso = _etapas.some(e => e.id !== etapaOrdenId && !!e.fecha_inicio && !e.fecha_fin);
-    if (otraEnCurso) {
-      if (!confirm('Hay una etapa en curso. ¿Querés iniciar esta etapa igualmente?')) return;
+  let _etapaIniciarId  = null;
+  let _modoModalArea   = 'iniciar'; // 'iniciar' | 'cambiar'
+  let _etapaCambiarId  = null;
+
+  function _abrirModalArea(titulo, areas, areaActualId, modo) {
+    _modoModalArea = modo;
+    document.getElementById('tituloModalAreaEtapa').textContent = titulo;
+    const sel = document.getElementById('inAreaEtapa');
+    sel.innerHTML = '<option value="">— Seleccionar —</option>';
+    areas.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id; opt.textContent = a.nombre;
+      if (areaActualId && a.id === areaActualId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    document.getElementById('alertAreaEtapa').style.display = 'none';
+    const btn = document.getElementById('btnConfirmarArea');
+    btn.textContent = modo === 'iniciar' ? '▶ Iniciar' : '✏ Guardar área';
+    document.getElementById('modalAreaEtapa').classList.add('open');
+  }
+
+  async function confirmarSeleccionArea() {
+    const area_id = document.getElementById('inAreaEtapa').value;
+    if (!area_id) { mostrarAlertaEtapa('alertAreaEtapa', 'Seleccioná un área.'); return; }
+    cerrarModal('modalAreaEtapa');
+    if (_modoModalArea === 'iniciar') {
+      await _ejecutarIniciarEtapa(_etapaIniciarId, parseInt(area_id));
+    } else {
+      await _ejecutarCambiarArea(_etapaCambiarId, parseInt(area_id));
     }
-    btn.disabled = true; btn.textContent = '…';
-    const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/iniciar`, { method: 'PATCH' });
+  }
+
+  async function _ejecutarCambiarArea(id, area_id) {
+    const res = await fetch(`/api/etapas-proceso/${id}/area`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ area_id }),
+    });
     if (res.ok) await cargarEtapasProceso();
-    else { btn.disabled = false; btn.textContent = '▶ Iniciar'; alert('Error.'); }
+    else { const e = await res.json(); alert(e.detail ?? 'Error al cambiar área.'); }
+  }
+
+  function abrirCambiarArea(id, nombre, areas, areaActualId) {
+    _etapaCambiarId = id;
+    _abrirModalArea(`Cambiar área: ${nombre}`, areas, areaActualId, 'cambiar');
+  }
+
+  function abrirIniciarEtapa(id, nombre, areas) {
+    // Verificar si hay etapas anteriores sin completar
+    const etapa = _etapas.find(e => e.id === id);
+    if (etapa) {
+      const anterioresPendientes = _etapas.filter(e =>
+        e.orden < etapa.orden && e.estado !== 'completada'
+      );
+      if (anterioresPendientes.length) {
+        const nombres = anterioresPendientes.map(e => e.nombre_display || e.nombre).join(', ');
+        const ok = confirm(`La etapa anterior "${nombres}" aún no está completada.\n¿Querés iniciar "${nombre}" de todas formas?`);
+        if (!ok) return;
+      }
+    }
+    if (!areas || areas.length <= 1) {
+      _ejecutarIniciarEtapa(id, null);
+    } else {
+      _etapaIniciarId = id;
+      _abrirModalArea(`Iniciar: ${nombre} — Seleccioná el área`, areas, null, 'iniciar');
+    }
+  }
+
+  async function _ejecutarIniciarEtapa(id, area_id) {
+    const body = area_id ? { area_id } : {};
+    const res = await fetch(`/api/etapas-proceso/${id}/iniciar`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (res.ok) await cargarEtapasProceso();
+    else { const e = await res.json(); alert(e.detail ?? 'Error al iniciar.'); }
   }
 
   async function cambiarTipoEstuchado(btn) {
@@ -1437,8 +1743,7 @@
     // Buscar la etapa ahora en_curso y abrir el modal
     const etapa = _etapas.find(e => e.id === parseInt(id));
     if (etapa) {
-      _etapaIdPendiente     = etapa.id;
-      _btnEtapaPendiente    = document.createElement('button'); // dummy
+      _etapaIdPendiente = etapa.id;
       const mostrarNum = etapa.total_iteraciones > 1;
       _etapaNombrePendiente = mostrarNum ? `${nombre} ${etapa.iteracion}` : nombre;
       document.getElementById('tituloModalEstuchado').textContent = `Finalizar ${_etapaNombrePendiente}`;
@@ -1446,60 +1751,93 @@
     }
   }
 
-  async function revertirEtapa(etapaOrdenId, tipo) {
-    const msg = tipo === 'inicio'
-      ? '¿Revertir el inicio de esta etapa? Volverá a Pendiente.'
-      : '¿Revertir la finalización? Volverá a En curso.';
-    if (!confirm(msg)) return;
-    const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/revertir`, {
-      method: 'PATCH',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({tipo}),
-    });
-    if (res.ok) await cargarEtapasProceso();
-    else alert('Error al revertir.');
-  }
 
-  function completarEtapa(etapaOrdenId, btn) {
-    const nombre = btn.dataset.nombre || '';
-    if (nombre.toLowerCase().includes('estuchado')) {
-      _etapaIdPendiente     = etapaOrdenId;
-      _btnEtapaPendiente    = btn;
-      const etapa = _etapas.find(e => e.id === etapaOrdenId);
-      const mostrarNum = etapa && etapa.total_iteraciones > 1;
-      _etapaNombrePendiente = mostrarNum ? `${nombre} ${etapa.iteracion}` : nombre;
-      document.getElementById('tituloModalEstuchado').textContent = `Finalizar ${_etapaNombrePendiente}`;
-      document.getElementById('modalEstuchadoParcial').classList.add('open');
-      return;
-    }
-    _ejecutarCompletarEtapa(etapaOrdenId, btn, false);
+  function completarEtapa(etapaOrdenId, nombre) {
+    abrirCompletarEtapa(etapaOrdenId, nombre);
   }
 
   async function confirmarCompletarEtapa(parcial) {
     cerrarModal('modalEstuchadoParcial');
-    const id  = _etapaIdPendiente;
-    const btn = _btnEtapaPendiente;
-    _etapaIdPendiente  = null;
-    _btnEtapaPendiente = null;
-    await _ejecutarCompletarEtapa(id, btn, parcial);
-    if (parcial) {
-      // Estuchado parcial → abrir modal de entrega parcial
-      abrirModalEntrega('parcial');
+    const id = _etapaIdPendiente;
+    _etapaIdPendiente = null;
+    await _ejecutarCompletarEtapa(id, parcial);
+  }
+
+  function abrirCompletarEtapa(id, nombre) {
+    const esEstuchado = nombre.toLowerCase().includes('estuchado');
+    if (esEstuchado) {
+      _etapaIdPendiente = id;
+      const etapa = _etapas.find(e => e.id === id);
+      const mostrarNum = etapa && etapa.total_iteraciones > 1;
+      _etapaNombrePendiente = mostrarNum ? `${nombre} ${etapa.iteracion}` : nombre;
+      document.getElementById('tituloModalEstuchado').textContent = `Finalizar ${_etapaNombrePendiente}`;
+      document.getElementById('modalEstuchadoParcial').classList.add('open');
     } else {
-      // Estuchado final → abrir modal de entrega final
-      abrirModalEntrega('final');
+      _ejecutarCompletarEtapa(id, false);
     }
   }
 
-  async function _ejecutarCompletarEtapa(etapaOrdenId, btn, parcial) {
-    btn.disabled = true; btn.textContent = '…';
+  function mostrarAlertaEtapa(id, msg) {
+    const el = document.getElementById(id); el.textContent = msg; el.style.display = '';
+  }
+
+  async function _ejecutarCompletarEtapa(etapaOrdenId, parcial) {
     const res = await fetch(`/api/etapas-proceso/${etapaOrdenId}/completar`, {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({parcial}),
+      body: JSON.stringify({ parcial }),
     });
+    if (!res.ok) { alert('Error al completar.'); return; }
+    const data = await res.json();
+    await cargarEtapasProceso();
+    if (data.todas_completadas) {
+      abrirModalEntrega('final');
+    } else if (data.es_parcial) {
+      abrirModalEntrega('parcial');
+    }
+  }
+
+
+  // ── Acciones admin ────────────────────────────────────────────────────────
+  async function adminRevertirOrden() {
+    if (!confirm('¿Revertir esta orden a En Proceso? Las entregas y el estado anterior quedarán en el historial.')) return;
+    const res = await fetch(`/api/ordenes/${ORDEN_ID}/revertir-entregada`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+    });
+    if (res.ok) location.reload();
+    else { const e = await res.json(); alert(e.detail || 'Error al revertir.'); }
+  }
+
+  async function adminRevertirEtapa(etapaId, tipo) {
+    const msg = tipo === 'inicio'
+      ? '¿Revertir inicio? La etapa volverá a Pendiente.'
+      : '¿Revertir finalización? La etapa volverá a En curso. Si la orden estaba Terminada volverá a En Proceso.';
+    if (!confirm(msg)) return;
+    const res = await fetch(`/api/etapas-proceso/${etapaId}/revertir`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tipo }),
+    });
+    if (res.ok) location.reload();
+    else alert('Error al revertir.');
+  }
+
+  async function adminEliminarEtapa(etapaId, nombre) {
+    if (!confirm(`¿Eliminar la etapa "${nombre}"? Esta acción no se puede deshacer.`)) return;
+    const res = await fetch(`/api/etapas-proceso/${etapaId}`, { method: 'DELETE' });
     if (res.ok) await cargarEtapasProceso();
-    else { btn.disabled = false; btn.textContent = '✓ Finalizar'; alert('Error.'); }
+    else alert('Error al eliminar etapa.');
+  }
+
+  async function adminEliminarEntrega(entregaId, esFinal) {
+    const msg = esFinal
+      ? '¿Eliminar esta entrega FINAL? La orden volverá a En Proceso.'
+      : '¿Eliminar esta entrega parcial?';
+    if (!confirm(msg)) return;
+    const res = await fetch(`/api/entregas/${entregaId}`, { method: 'DELETE' });
+    if (res.ok) location.reload();
+    else alert('Error al eliminar entrega.');
   }
 
   function fmtDate(iso) {
@@ -1507,9 +1845,12 @@
     return new Date(iso).toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   }
 
-  document.querySelectorAll('.modal-overlay').forEach(el =>
-    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); })
-  );
+  const MODALES_SIN_CIERRE_EXTERNO = ['modalEntrega', 'modalEstuchadoParcial'];
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    if (!MODALES_SIN_CIERRE_EXTERNO.includes(el.id)) {
+      el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+    }
+  });
 </script>
 </body>
 </html>

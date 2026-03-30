@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
+from shared import templates as _shared_templates
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import io
 
-from database import get_db, Formula, FormulaComponente, MateriaPrima, MaterialEmpaque, TipoFaltante
+from database import get_db, Formula, FormulaComponente, MateriaPrima, MaterialEmpaque, TipoFaltante, ProductoTerminado
 from routers.auth import require_auth
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None
+templates = _shared_templates
 
 
 # ── Rutas fijas ANTES de las paramétricas ─────────────────────────────────────
@@ -162,11 +162,56 @@ async def api_list_formulas(
     db: Session = Depends(get_db),
     user: dict = Depends(require_auth),
 ):
-    formulas = db.query(Formula).order_by(Formula.producto_codigo).all()
-    return [
-        {**_formula_dict(f), "total_componentes": len(f.componentes)}
-        for f in formulas
-    ]
+    # Contar componentes por fórmula en una sola query (evita N+1)
+    conteos = dict(
+        db.query(FormulaComponente.formula_id, func.count(FormulaComponente.id))
+        .group_by(FormulaComponente.formula_id)
+        .all()
+    )
+    formulas_por_codigo = {
+        f.producto_codigo: f
+        for f in db.query(Formula).all()
+    }
+    productos = db.query(ProductoTerminado).order_by(ProductoTerminado.codigo).all()
+    result = []
+    for p in productos:
+        if p.codigo in formulas_por_codigo:
+            f = formulas_por_codigo[p.codigo]
+            result.append({**_formula_dict(f), "total_componentes": conteos.get(f.id, 0), "tiene_formula": True})
+        else:
+            result.append({
+                "id": None,
+                "producto_codigo": p.codigo,
+                "producto_descripcion": p.descripcion,
+                "activo": p.activo,
+                "total_componentes": 0,
+                "tiene_formula": False,
+            })
+    return result
+
+
+@router.post("/api/formulas")
+async def api_crear_formula(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_auth),
+):
+    if user["rol"] != "admin":
+        raise HTTPException(403, "Solo el administrador puede crear fórmulas.")
+    body = await request.json()
+    codigo = body.get("producto_codigo", "").strip().upper()
+    if not codigo:
+        raise HTTPException(422, "El código de producto es obligatorio.")
+    producto = db.query(ProductoTerminado).filter(ProductoTerminado.codigo == codigo).first()
+    if not producto:
+        raise HTTPException(404, f"Producto '{codigo}' no encontrado.")
+    if db.query(Formula).filter(Formula.producto_codigo == codigo).first():
+        raise HTTPException(409, f"Ya existe una fórmula para '{codigo}'.")
+    f = Formula(producto_codigo=producto.codigo, producto_descripcion=producto.descripcion, activo=True)
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return {**_formula_dict(f), "total_componentes": 0, "tiene_formula": True}
 
 
 @router.get("/api/formulas-detalle/{formula_id}")

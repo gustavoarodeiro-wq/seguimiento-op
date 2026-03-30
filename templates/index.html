@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — Seguimiento OP</title>
+  <title>Dashboard — SGLab</title>
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
@@ -43,11 +43,6 @@
       </div>
       <div class="stat-card stat-green">
         <div class="stat-label">Terminadas</div>
-        <div class="stat-value" id="statTerminada">—</div>
-        <div class="stat-sub">órdenes</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Entregadas</div>
         <div class="stat-value" id="statEntregada">—</div>
         <div class="stat-sub">órdenes</div>
       </div>
@@ -109,30 +104,6 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Últimas órdenes</span>
-        <a href="/ordenes" class="btn btn-primary btn-sm">Ver todas</a>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>OP</th>
-              <th>Producto</th>
-              <th>Lote PT</th>
-              <th>Cantidad</th>
-              <th>Estado</th>
-              <th>Fecha carga</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="tbodyOrdenes">
-            <tr><td colspan="7" class="text-muted text-sm" style="text-align:center;padding:2rem">Cargando…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   </main>
 
 </div>
@@ -143,17 +114,16 @@
 
   async function loadDashboard() {
     try {
-      const [sr, or, ar] = await Promise.all([
+      const [sr, ar] = await Promise.all([
         fetch('/api/stats'),
-        fetch('/api/ordenes?limit=10'),
         fetch('/api/alertas'),
       ]);
+      const or = { ok: false };
       if (sr.ok) {
         const s = await sr.json();
         document.getElementById('statRevisar').textContent    = s.revisar;
         document.getElementById('statParaEmitir').textContent = s.para_emitir;
         document.getElementById('statEnProceso').textContent  = s.en_proceso;
-        document.getElementById('statTerminada').textContent  = s.terminada;
         document.getElementById('statEntregada').textContent    = s.entregada;
         document.getElementById('statFaltantes').textContent    = s.faltante;
         document.getElementById('statUnidadesMes').textContent  = (s.unidades_mes ?? 0).toLocaleString('es-AR');
@@ -201,24 +171,12 @@
     `).join('');
   }
 
-  function renderOrdenes(ordenes) {
-    const tbody = document.getElementById('tbodyOrdenes');
-    if (!ordenes.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin órdenes registradas.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = ordenes.map(o => `
-      <tr>
-        <td class="font-mono">${esc(o.op)}</td>
-        <td>${esc(o.descripcion_producto)}</td>
-        <td class="font-mono text-sm">${esc(o.lote_pt ?? '—')}</td>
-        <td>${esc(String(o.cantidad))} ${fmtUnidad(o.unidad)}</td>
-        <td><span class="badge badge-${esc(o.estado)}">${esc(o.estado.replace('_',' '))}</span></td>
-        <td class="text-sm text-muted">${fmtDate(o.fecha_carga)}</td>
-        <td><a href="/ordenes/${o.id}" class="btn btn-secondary btn-sm">Ver</a></td>
-      </tr>
-    `).join('');
-  }
+
+  const LABELS_ESTADO = {
+    revisar:'Revisar', faltante:'Faltante', para_emitir:'Para Emitir',
+    emitido:'Enviado a QA', en_proceso:'En Proceso', terminada:'Prod. Finalizada',
+    entregada:'Terminado', cancelada:'Cancelada',
+  };
 
   function esc(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

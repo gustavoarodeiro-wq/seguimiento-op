@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
+from config_cache import now_local as now_ar
+
 from database import get_db, AlertaConfig, Orden, Entrega, HistorialEstado
 from routers.auth import require_auth
 
@@ -121,7 +123,7 @@ async def get_alertas(
         .order_by(AlertaConfig.id)
         .all()
     )
-    ahora = datetime.utcnow()
+    ahora = now_ar()
     alertas = []
 
     for c in configs:

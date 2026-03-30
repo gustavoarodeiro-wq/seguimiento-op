@@ -57,10 +57,9 @@
               <option value="revisar">Revisar</option>
               <option value="faltante">Faltante</option>
               <option value="para_emitir">Para Emitir</option>
-              <option value="emitido">Emitido</option>
+              <option value="emitido">Enviado a QA</option>
               <option value="en_proceso">En Proceso</option>
-              <option value="terminada">Terminada</option>
-              <option value="entregada">Entregada</option>
+              <option value="entregada">Terminado</option>
               <option value="cancelada">Cancelada</option>
             </select>
           </div>
@@ -100,7 +99,7 @@
               <th>Producto</th>
               <th>Cantidad</th>
               <th>Estado</th>
-              <th>Subestado</th>
+              <th>Etapa</th>
               <th>Creado por</th>
               <th></th>
             </tr>
@@ -117,14 +116,26 @@
 <script>
   function fmtUnidad(u) { return {KG:'Kg',G:'g',ML:'mL',UN:'UN',L:'L'}[u] ?? u; }
 
+  function fmtEtapa(nombre, estado, siguiente) {
+    if (!nombre) return '<span class="text-muted">—</span>';
+    const esEnCurso = estado === 'en_curso';
+    let html = '';
+    if (esEnCurso) {
+      html = `<span style="background:#dcfce7;color:#14532d;padding:.15rem .6rem;border-radius:99px;font-size:.75rem;font-weight:600">${esc(nombre)} · En curso</span>`;
+    } else {
+      html = `<span style="background:#cffafe;color:#164e63;padding:.15rem .6rem;border-radius:99px;font-size:.75rem;font-weight:500">${esc(nombre)} · Pendiente</span>`;
+    }
+    return html;
+  }
+
   const LABELS_ESTADO = {
     revisar:     'Revisar',
     faltante:    'Faltante',
     para_emitir: 'Para Emitir',
-    emitido:     'Emitido',
+    emitido:     'Enviado a QA',
     en_proceso:  'En Proceso',
-    terminada:   'Terminada',
-    entregada:   'Entregada',
+    terminada:   'Prod. Finalizada',
+    entregada:   'Terminado',
     cancelada:   'Cancelada',
   };
 
@@ -181,7 +192,7 @@
         <td>${esc(o.descripcion_producto)}</td>
         <td class="text-sm">${o.cantidad} ${fmtUnidad(o.unidad ?? '')}</td>
         <td><span class="badge badge-${esc(o.estado)}">${esc(LABELS_ESTADO[o.estado] ?? o.estado)}</span></td>
-        <td class="text-sm text-muted">${esc(o.subestado ?? '—')}</td>
+        <td class="text-sm" style="white-space:normal">${fmtEtapa(o.etapa_actual, o.etapa_estado, o.etapa_siguiente)}</td>
         <td class="text-sm text-muted">${esc(o.creado_por_nombre ?? '—')}</td>
         <td><a href="/ordenes/${o.id}" class="btn btn-secondary btn-sm">Ver detalle</a></td>
       </tr>

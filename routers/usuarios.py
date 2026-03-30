@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from shared import templates as _shared_templates
 from sqlalchemy.orm import Session
 import bcrypt as _bcrypt
 import json
@@ -9,8 +9,7 @@ from routers.auth import require_auth
 from permissions import compute_permisos, TODOS_LOS_PERMISOS, GRUPOS_PERMISOS, default_permisos
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None  # workaround Python 3.14+
+templates = _shared_templates
 
 ROLES_VALIDOS = {r.value for r in RolUsuario}
 

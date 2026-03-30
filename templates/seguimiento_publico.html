@@ -193,13 +193,13 @@
 </div>
 
 <script>
-  const ESTADOS_ACTIVOS = ['todos','revisar','faltante','para_emitir','emitido','en_proceso','terminada'];
+  const ESTADOS_ACTIVOS = ['todos','revisar','faltante','para_emitir','emitido','en_proceso'];
   const ESTADOS_TODOS   = [...ESTADOS_ACTIVOS, 'entregada', 'cancelada'];
 
   const LABELS = {
     todos:'Todos', revisar:'Revisar', faltante:'Faltante',
-    para_emitir:'Para Emitir', emitido:'Emitido', en_proceso:'En Proceso',
-    terminada:'Terminada', entregada:'Entregada', cancelada:'Cancelada'
+    para_emitir:'Para Emitir', emitido:'Enviado a QA', en_proceso:'En Proceso',
+    terminada:'Prod. Finalizada', entregada:'Terminado', cancelada:'Cancelada'
   };
   const BADGE_CLASS = {
     revisar:'badge-revisar', faltante:'badge-faltante', para_emitir:'badge-para_emitir',

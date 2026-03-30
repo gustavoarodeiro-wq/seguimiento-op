@@ -65,13 +65,23 @@
 
     <div id="alertImport" style="display:none;margin-bottom:1rem"></div>
 
+    <!-- Alerta productos sin fórmula -->
+    <div id="alertSinFormula" style="display:none;margin-bottom:1rem;padding:.75rem 1rem;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;display:flex;align-items:center;gap:.6rem;font-size:.875rem;color:#92400e">
+      <span style="font-size:1.1rem">⚠</span>
+      <span id="alertSinFormulaTexto"></span>
+    </div>
+
     <div class="card" style="margin-bottom:1rem">
-      <div class="card-body" style="padding:.7rem 1rem;display:flex;gap:1rem;align-items:center">
+      <div class="card-body" style="padding:.7rem 1rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
         <input type="text" id="inputBuscar" placeholder="Buscar por código o descripción…"
                oninput="filtrar()" style="flex:1;min-width:200px">
         <label style="display:flex;align-items:center;gap:.4rem;font-size:.875rem;cursor:pointer;white-space:nowrap">
           <input type="checkbox" id="chkSoloActivas" onchange="filtrar()" checked>
           Solo activas
+        </label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.875rem;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="chkSinFormula" onchange="filtrar()">
+          Solo sin fórmula
         </label>
         <span class="text-muted text-sm" id="totalLabel"></span>
       </div>
@@ -85,7 +95,7 @@
               <th>Código</th>
               <th>Descripción</th>
               <th style="text-align:center">Componentes</th>
-              <th style="text-align:center">Estado</th>
+              <th style="text-align:center">Fórmula</th>
               <th></th>
             </tr>
           </thead>
@@ -184,27 +194,29 @@
 
 <!-- Modal: agregar componente -->
 <div class="modal-overlay" id="modalComp">
-  <div class="modal-sm">
+  <div class="modal-sm" style="max-width:520px">
     <h3>Agregar componente</h3>
     <div class="form-group">
-      <label>Código MP o ME *</label>
-      <input type="text" id="inCompCodigo" placeholder="ej: MP-001" style="text-transform:uppercase"
-             oninput="buscarComponenteMaestro(this.value)">
-      <div style="font-size:.78rem;margin-top:.25rem" id="inCompCodigoHint">
-        Debe estar cargado en Materias Primas o Materiales de Empaque.
+      <label>Buscar MP o ME *</label>
+      <input type="text" id="inCompBuscar" placeholder="Escribí código o descripción…"
+             oninput="filtrarListaComp(this.value)" autocomplete="off">
+    </div>
+    <!-- Lista de resultados -->
+    <div id="listaCompResultados"
+         style="max-height:220px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.75rem;display:none">
+    </div>
+    <!-- Seleccionado -->
+    <div id="compSeleccionado" style="display:none;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:.75rem;font-size:.875rem">
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <span id="compSelBadge" style="font-family:monospace;font-size:.8rem;background:#dbeafe;color:#1e40af;padding:.15rem .5rem;border-radius:4px;flex-shrink:0"></span>
+        <span id="compSelDesc" style="flex:1;font-weight:600"></span>
+        <span id="compSelUnidad" style="color:var(--gray-400);font-size:.8rem"></span>
+        <button onclick="limpiarSeleccionComp()" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:1rem;line-height:1">✕</button>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-      <div class="form-group">
-        <label>Cantidad *</label>
-        <input type="number" id="inCompCant" step="0.0001" min="0" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label>Unidad</label>
-        <input type="text" id="inCompUnidad" readonly
-               style="text-transform:uppercase;background:var(--gray-100);color:var(--gray-500);cursor:not-allowed"
-               placeholder="Automático">
-      </div>
+    <div class="form-group">
+      <label>Cantidad *</label>
+      <input type="number" id="inCompCant" step="0.0001" min="0" placeholder="0">
     </div>
     <div id="alertComp" class="alert alert-error" style="display:none;margin-top:.5rem"></div>
     <div class="modal-footer">
@@ -224,6 +236,8 @@
   let _masterDescriptions = null;
   let _masterGranel = {};      // { codigo: { granel_x_unidad, granel_unidad } }
   let _masterComprimido = {};  // { codigo: { peso_mg, comp_x_blister, blisters_x_pt } }
+  let _listaMPME = [];         // [{ codigo, descripcion, unidad, tipo }]
+  let _compSeleccionado = null; // item seleccionado en el modal
 
   // ── Masters cache ──────────────────────────────────────────────────────────
   async function _cargarMasters() {
@@ -235,8 +249,17 @@
     ]);
     const mp = await rMP.json(), me = await rME.json(), pt = await rPT.json();
     _masterUnits = {}; _masterDescriptions = {}; _masterGranel = {}; _masterComprimido = {};
-    (mp.items ?? mp).forEach(x => { _masterUnits[x.codigo] = x.unidad; _masterDescriptions[x.codigo] = x.descripcion; });
-    (me.items ?? me).forEach(x => { _masterUnits[x.codigo] = x.unidad; _masterDescriptions[x.codigo] = x.descripcion; });
+    _listaMPME = [];
+    (mp.items ?? mp).forEach(x => {
+      _masterUnits[x.codigo] = x.unidad;
+      _masterDescriptions[x.codigo] = x.descripcion;
+      _listaMPME.push({ codigo: x.codigo, descripcion: x.descripcion, unidad: x.unidad, tipo: 'MP' });
+    });
+    (me.items ?? me).forEach(x => {
+      _masterUnits[x.codigo] = x.unidad;
+      _masterDescriptions[x.codigo] = x.descripcion;
+      _listaMPME.push({ codigo: x.codigo, descripcion: x.descripcion, unidad: x.unidad, tipo: 'ME' });
+    });
     (pt.items ?? pt).forEach(x => {
       _masterUnits[x.codigo] = x.unidad;
       _masterDescriptions[x.codigo] = x.descripcion;
@@ -254,6 +277,7 @@
         };
       }
     });
+    _listaMPME.sort((a, b) => a.codigo.localeCompare(b.codigo));
   }
 
   // ── Carga y filtrado ───────────────────────────────────────────────────────
@@ -262,6 +286,16 @@
   async function cargarFormulas() {
     const res = await fetch('/api/formulas');
     _formulas = await res.json();
+    // Alerta de sin fórmula
+    const sinFormula = _formulas.filter(f => !f.tiene_formula && f.activo);
+    const alertDiv  = document.getElementById('alertSinFormula');
+    if (sinFormula.length) {
+      document.getElementById('alertSinFormulaTexto').textContent =
+        `${sinFormula.length} producto${sinFormula.length > 1 ? 's' : ''} activo${sinFormula.length > 1 ? 's' : ''} sin fórmula cargada.`;
+      alertDiv.style.display = 'flex';
+    } else {
+      alertDiv.style.display = 'none';
+    }
     // Pre-filtrar si viene ?codigo= en la URL
     const params = new URLSearchParams(window.location.search);
     const codigoParam = params.get('codigo');
@@ -273,18 +307,20 @@
     // Si hay código, abrir el detalle directamente
     if (codigoParam) {
       const formula = _formulas.find(f => f.producto_codigo === codigoParam);
-      if (formula) abrirDetalle(formula.id);
+      if (formula && formula.tiene_formula) abrirDetalle(formula.id);
     }
   }
 
   function filtrar() {
-    const q    = document.getElementById('inputBuscar').value.toLowerCase();
-    const solo = document.getElementById('chkSoloActivas').checked;
+    const q          = document.getElementById('inputBuscar').value.toLowerCase();
+    const soloActiva = document.getElementById('chkSoloActivas').checked;
+    const soloSin    = document.getElementById('chkSinFormula').checked;
     const lista = _formulas.filter(f =>
-      (!solo || f.activo) &&
+      (!soloActiva || f.activo) &&
+      (!soloSin    || !f.tiene_formula) &&
       (f.producto_codigo.toLowerCase().includes(q) || f.producto_descripcion.toLowerCase().includes(q))
     );
-    document.getElementById('totalLabel').textContent = `${lista.length} fórmula(s)`;
+    document.getElementById('totalLabel').textContent = `${lista.length} producto(s)`;
     renderTabla(lista);
   }
 
@@ -294,21 +330,53 @@
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-sm" style="text-align:center;padding:2rem">Sin resultados.</td></tr>';
       return;
     }
-    tbody.innerHTML = lista.map(f => `
-      <tr class="formula-row" onclick="abrirDetalle(${f.id})" style="${f.activo ? '' : 'opacity:.55'}">
-        <td class="font-mono" style="font-size:.875rem;font-weight:700">${esc(f.producto_codigo)}</td>
-        <td style="font-size:.875rem">${esc(f.producto_descripcion)}</td>
-        <td style="text-align:center">
-          <span class="badge" style="background:#dbeafe;color:#1e40af" id="badge-comp-${f.id}">${f.total_componentes}</span>
-        </td>
-        <td style="text-align:center">
-          <span class="badge-${f.activo ? 'activa' : 'inactiva'}" id="badge-activa-${f.id}">
-            ${f.activo ? 'Activa' : 'Inactiva'}
-          </span>
-        </td>
-        <td style="text-align:right;color:var(--gray-400);font-size:.8rem;white-space:nowrap">Ver detalle →</td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = lista.map(f => {
+      if (!f.tiene_formula) {
+        return `
+          <tr class="formula-row" onclick="crearFormula('${esc(f.producto_codigo)}','${esc(f.producto_descripcion)}')"
+              style="opacity:.7;background:#fffbeb">
+            <td class="font-mono" style="font-size:.875rem;font-weight:700">${esc(f.producto_codigo)}</td>
+            <td style="font-size:.875rem">${esc(f.producto_descripcion)}</td>
+            <td style="text-align:center">—</td>
+            <td style="text-align:center">
+              <span style="background:#fef3c7;color:#92400e;font-size:.75rem;border-radius:99px;padding:.15rem .65rem;font-weight:600">Sin fórmula</span>
+            </td>
+            <td style="text-align:right;color:#f59e0b;font-size:.8rem;white-space:nowrap">+ Crear →</td>
+          </tr>`;
+      }
+      return `
+        <tr class="formula-row" onclick="abrirDetalle(${f.id})" style="${f.activo ? '' : 'opacity:.55'}">
+          <td class="font-mono" style="font-size:.875rem;font-weight:700">${esc(f.producto_codigo)}</td>
+          <td style="font-size:.875rem">${esc(f.producto_descripcion)}</td>
+          <td style="text-align:center">
+            <span class="badge" style="background:#dbeafe;color:#1e40af">${f.total_componentes}</span>
+          </td>
+          <td style="text-align:center">
+            <span class="badge-${f.activo ? 'activa' : 'inactiva'}">
+              ${f.activo ? 'Activa' : 'Inactiva'}
+            </span>
+          </td>
+          <td style="text-align:right;color:var(--gray-400);font-size:.8rem;white-space:nowrap">Ver detalle →</td>
+        </tr>`;
+    }).join('');
+  }
+
+  async function crearFormula(codigo, descripcion) {
+    if (!ES_ADMIN) return;
+    if (!confirm(`¿Crear fórmula vacía para "${codigo} — ${descripcion}"?\nPodrás agregar los componentes a continuación.`)) return;
+    const res = await fetch('/api/formulas', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ producto_codigo: codigo }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail ?? 'Error al crear la fórmula.');
+      return;
+    }
+    const nueva = await res.json();
+    await cargarFormulas();
+    abrirDetalle(nueva.id);
   }
 
   // ── Abrir / cerrar modal detalle ───────────────────────────────────────────
@@ -657,47 +725,72 @@
 
   // ── Agregar componente ─────────────────────────────────────────────────────
   async function abrirModalComp() {
-    document.getElementById('inCompCodigo').value = '';
+    _compSeleccionado = null;
+    document.getElementById('inCompBuscar').value = '';
     document.getElementById('inCompCant').value   = '';
-    document.getElementById('inCompUnidad').value = '';
-    document.getElementById('inCompCodigoHint').textContent = 'Debe estar cargado en Materias Primas o Materiales de Empaque.';
-    document.getElementById('inCompCodigoHint').style.color = 'var(--gray-400)';
+    document.getElementById('listaCompResultados').style.display = 'none';
+    document.getElementById('listaCompResultados').innerHTML = '';
+    document.getElementById('compSeleccionado').style.display = 'none';
     document.getElementById('alertComp').style.display = 'none';
     document.getElementById('modalComp').classList.add('open');
     await _cargarMasters();
-    setTimeout(() => document.getElementById('inCompCodigo').focus(), 50);
+    setTimeout(() => document.getElementById('inCompBuscar').focus(), 50);
   }
 
   function cerrarModalComp() { document.getElementById('modalComp').classList.remove('open'); }
 
-  function buscarComponenteMaestro(raw) {
-    const codigo = raw.trim().toUpperCase();
-    const hint = document.getElementById('inCompCodigoHint');
-    const unidInput = document.getElementById('inCompUnidad');
-    if (!codigo || !_masterUnits) { unidInput.value = ''; return; }
-    const unidad = _masterUnits[codigo];
-    if (unidad) {
-      unidInput.value = unidad;
-      const desc = _masterDescriptions?.[codigo] ?? '';
-      hint.textContent = desc ? `✓ ${desc}` : '✓ Encontrado';
-      hint.style.color = '#16a34a';
-    } else {
-      unidInput.value = '';
-      hint.textContent = 'Código no encontrado en MP ni ME.';
-      hint.style.color = '#dc2626';
+  function filtrarListaComp(q) {
+    const lista = document.getElementById('listaCompResultados');
+    const txt = q.trim().toLowerCase();
+    if (!txt) { lista.style.display = 'none'; lista.innerHTML = ''; return; }
+    const resultados = _listaMPME.filter(x =>
+      x.codigo.toLowerCase().includes(txt) || x.descripcion.toLowerCase().includes(txt)
+    ).slice(0, 50);
+    if (!resultados.length) {
+      lista.innerHTML = '<div style="padding:.6rem .75rem;font-size:.85rem;color:var(--gray-400)">Sin resultados</div>';
+      lista.style.display = '';
+      return;
     }
+    lista.innerHTML = resultados.map(x => `
+      <div onclick="seleccionarComp(${JSON.stringify(x).replace(/"/g,'&quot;')})"
+           style="padding:.5rem .75rem;cursor:pointer;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:.5rem;font-size:.875rem"
+           onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+        <span style="font-family:monospace;font-size:.78rem;background:var(--gray-100);color:var(--gray-500);padding:.1rem .45rem;border-radius:4px;flex-shrink:0">${esc(x.codigo)}</span>
+        <span style="flex:1">${esc(x.descripcion)}</span>
+        <span style="font-size:.75rem;padding:.1rem .4rem;border-radius:99px;flex-shrink:0;background:${x.tipo==='MP'?'#d1fae5':'#dbeafe'};color:${x.tipo==='MP'?'#065f46':'#1e40af'};font-weight:600">${x.tipo}</span>
+        <span style="color:var(--gray-400);font-size:.78rem;flex-shrink:0">${esc(x.unidad)}</span>
+      </div>
+    `).join('');
+    lista.style.display = '';
+  }
+
+  function seleccionarComp(item) {
+    _compSeleccionado = item;
+    document.getElementById('inCompBuscar').value = '';
+    document.getElementById('listaCompResultados').style.display = 'none';
+    document.getElementById('listaCompResultados').innerHTML = '';
+    document.getElementById('compSelBadge').textContent  = item.codigo;
+    document.getElementById('compSelDesc').textContent   = item.descripcion;
+    document.getElementById('compSelUnidad').textContent = item.unidad;
+    document.getElementById('compSeleccionado').style.display = '';
+    document.getElementById('alertComp').style.display = 'none';
+    setTimeout(() => document.getElementById('inCompCant').focus(), 50);
+  }
+
+  function limpiarSeleccionComp() {
+    _compSeleccionado = null;
+    document.getElementById('compSeleccionado').style.display = 'none';
+    setTimeout(() => document.getElementById('inCompBuscar').focus(), 50);
   }
 
   async function guardarComp() {
-    const codigo   = document.getElementById('inCompCodigo').value.trim().toUpperCase();
-    const cantidad = Math.round(parseFloat(document.getElementById('inCompCant').value) * 10000) / 10000;
-    const unidad   = document.getElementById('inCompUnidad').value.trim().toUpperCase();
     const al = document.getElementById('alertComp');
-    if (!codigo || !cantidad) { al.textContent = 'Completá código y cantidad.'; al.style.display = ''; return; }
-    if (!unidad) { al.textContent = 'El código no se encontró en los maestros.'; al.style.display = ''; return; }
+    if (!_compSeleccionado) { al.textContent = 'Seleccioná un componente de la lista.'; al.style.display = ''; return; }
+    const cantidad = Math.round(parseFloat(document.getElementById('inCompCant').value) * 10000) / 10000;
+    if (!cantidad || isNaN(cantidad)) { al.textContent = 'Ingresá una cantidad válida.'; al.style.display = ''; return; }
     const res = await fetch(`/api/formulas/${_formulaActual.id}/componentes`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ componente_codigo: codigo, cantidad, unidad }),
+      body: JSON.stringify({ componente_codigo: _compSeleccionado.codigo, cantidad, unidad: _compSeleccionado.unidad }),
     });
     if (res.ok) {
       cerrarModalComp();

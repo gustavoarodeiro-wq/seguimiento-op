@@ -1,7 +1,10 @@
 <header class="topbar">
   <div class="topbar-brand">
-    <span class="icon">⚙</span>
-    Seguimiento OP <span style="font-size:0.75rem; color:#9ca3af; font-weight:normal;">v1.0.0</span>
+    <span class="topbar-logo">⚗</span>
+    <div class="topbar-brand-text">
+      <span class="topbar-title">Sistema de Gestión para Laboratorios Farmacéuticos <span class="topbar-version">v1.2</span></span>
+      {% set _lab = get_lab_nombre() %}{% if _lab %}<span class="topbar-lab">{{ _lab }}</span>{% endif %}
+    </div>
   </div>
   <div class="topbar-user">
     <span class="user-name">{{ user.nombre }}</span>

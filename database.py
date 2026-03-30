@@ -4,6 +4,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
+
+def _now_ar():
+    try:
+        from config_cache import now_local
+        return now_local()
+    except Exception:
+        return datetime.now()
 import enum
 import os
 
@@ -183,7 +190,7 @@ class Orden(Base):
     __tablename__ = "ordenes"
 
     id = Column(Integer, primary_key=True, index=True)
-    fecha_carga = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_carga = Column(DateTime, default=_now_ar, nullable=False)
     codigo_producto = Column(String(50), nullable=False)
     descripcion_producto = Column(String(255), nullable=False)
     lote_granel = Column(String(50), nullable=True)
@@ -206,6 +213,7 @@ class Orden(Base):
     historial = relationship("HistorialEstado", back_populates="orden")
     faltantes = relationship("Faltante", back_populates="orden")
     entregas = relationship("Entrega", back_populates="orden")
+    etapas_orden = relationship("EtapaOrden", back_populates="orden", cascade="all, delete-orphan")
 
 
 class HistorialEstado(Base):
@@ -218,7 +226,7 @@ class HistorialEstado(Base):
     subestado_anterior = Column(String(100), nullable=True)
     subestado_nuevo = Column(String(100), nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-    fecha = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha = Column(DateTime, default=_now_ar, nullable=False)
     observaciones = Column(Text, nullable=True)
 
     orden = relationship("Orden", back_populates="historial")
@@ -235,7 +243,7 @@ class Faltante(Base):
     descripcion = Column(String(255), nullable=False)
     observacion = Column(Text, nullable=True)
     resuelto = Column(Boolean, default=False, nullable=False)
-    fecha_registro = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_registro = Column(DateTime, default=_now_ar, nullable=False)
     fecha_resolucion = Column(DateTime, nullable=True)
 
     orden = relationship("Orden", back_populates="faltantes")
@@ -246,7 +254,7 @@ class Entrega(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=False)
-    fecha_entrega = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_entrega = Column(DateTime, default=_now_ar, nullable=False)
     cantidad_entregada = Column(Float, nullable=False)
     muestras_control = Column(Float, nullable=True)
     remito = Column(String(100), nullable=True)
@@ -286,13 +294,24 @@ class EtapaOrden(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     orden_id = Column(Integer, ForeignKey("ordenes.id"), nullable=False)
-    etapa_produccion_id = Column(Integer, ForeignKey("etapas_produccion.id"), nullable=False)
+    etapa_producto_id = Column(Integer, ForeignKey("etapas_producto.id"), nullable=True)
+    etapa_produccion_id = Column(Integer, ForeignKey("etapas_produccion.id"), nullable=True)  # legacy
+    area_id = Column(Integer, ForeignKey("areas_produccion.id"), nullable=True)
+    estado = Column(String(20), nullable=False, default="pendiente")  # pendiente | en_curso | completada
+    iteracion = Column(Integer, nullable=False, default=1)  # 1, 2, 3... para estuchados parciales
+    nombre_display = Column(String(200), nullable=True)     # ej: "Estuchado 1", "Estuchado 2"
     fecha_inicio = Column(DateTime, nullable=True)
     fecha_fin = Column(DateTime, nullable=True)
+    cantidad_obtenida = Column(Float, nullable=True)
+    unidad_obtenida = Column(String(10), nullable=True)
     usuario_inicio_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    usuario_fin_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
 
-    etapa = relationship("EtapaProduccion")
+    orden = relationship("Orden", back_populates="etapas_orden")
+    etapa_producto = relationship("EtapaProducto")
+    area = relationship("AreaProduccion")
     usuario_inicio = relationship("Usuario", foreign_keys=[usuario_inicio_id])
+    usuario_fin = relationship("Usuario", foreign_keys=[usuario_fin_id])
 
 
 class EtapaMaestro(Base):
@@ -336,3 +355,10 @@ class AlertaConfig(Base):
     dias_limite = Column(Integer, nullable=False)
     estado_aplica = Column(String(50), nullable=True)
     activo = Column(Boolean, default=True, nullable=False)
+
+
+class ConfigSistema(Base):
+    __tablename__ = "config_sistema"
+
+    clave = Column(String(100), primary_key=True)
+    valor = Column(Text, nullable=True)

@@ -21,6 +21,7 @@ TODOS_LOS_PERMISOS = {
     "configurar_alertas": "Configurar los días límite de alertas",
     "editar_maestros":    "Crear y editar maestros (productos, MPs, formas, fórmulas)",
     "gestionar_usuarios": "Gestionar usuarios del sistema",
+    "accion_admin":       "Acciones de administrador: revertir etapas, eliminar entregas, eliminar órdenes en cualquier estado",
 }
 
 # Grupos para mostrar en la UI
@@ -43,13 +44,14 @@ GRUPOS_PERMISOS = [
     ("Administración", [
         "editar_maestros",
         "gestionar_usuarios",
+        "accion_admin",
     ]),
 ]
 
 # ── Defaults por rol ──────────────────────────────────────────────────────────
 
 _DEFAULTS: dict[str, dict[str, bool]] = {
-    "admin": {p: True for p in TODOS_LOS_PERMISOS},
+    "admin": {p: True for p in TODOS_LOS_PERMISOS},  # incluye accion_admin
     "supervisor": {
         "crear_orden":        True,
         "cambiar_estado":     True,

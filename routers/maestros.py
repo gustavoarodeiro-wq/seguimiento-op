@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
+from shared import templates as _shared_templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import io
@@ -17,8 +17,7 @@ from routers.auth import require_auth
 from routers.backup import hacer_backup
 
 router = APIRouter(prefix="/api")
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None  # workaround Python 3.14+
+templates = _shared_templates
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -714,46 +713,57 @@ async def plantilla_productos_liquidos(
 
 
 @router.get("/materias-primas/plantilla")
-async def plantilla_mp(user: dict = Depends(require_auth)):
+async def plantilla_mp(db: Session = Depends(get_db), user: dict = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Materias Primas"
     cols = ["codigo", "descripcion", "unidad", "condicion"]
     _estilo_encabezado(ws, cols)
-    ws.append(["MP-001", "Amoxicilina Trihidrato", "KG", "Activo"])
-    nota = ws.cell(row=3, column=1, value="* unidad: G, KG o L  |  condicion: Activo o Excipiente (opcional)")
+    items = db.query(MateriaPrima).order_by(MateriaPrima.codigo).all()
+    for m in items:
+        ws.append([m.codigo, m.descripcion, m.unidad.value, m.condicion or ""])
+    if not items:
+        ws.append(["MP-001", "Amoxicilina Trihidrato", "KG", "Activo"])
+    nota = ws.cell(row=len(items) + 3, column=1, value="* unidad: G, KG o L  |  condicion: Activo o Excipiente (opcional)")
     nota.font = Font(italic=True, color="6B7280")
-    ws.merge_cells("A3:D3")
-    return _excel_response(wb, "plantilla_materias_primas.xlsx")
+    ws.merge_cells(f"A{len(items)+3}:D{len(items)+3}")
+    return _excel_response(wb, "export_materias_primas.xlsx")
 
 
 @router.get("/materiales-empaque/plantilla")
-async def plantilla_me(user: dict = Depends(require_auth)):
+async def plantilla_me(db: Session = Depends(get_db), user: dict = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Materiales Empaque"
     cols = ["codigo", "descripcion", "unidad", "clasificacion"]
     _estilo_encabezado(ws, cols)
-    ws.append(["ME-001", "Blíster PVC-Aluminio 10x10", "UN", "Estuche"])
-    nota = ws.cell(row=3, column=1, value="* unidad: UN o KG  |  clasificacion: libre (ej: Estuche, Prospecto, Etiqueta, Frasco…)")
+    items = db.query(MaterialEmpaque).order_by(MaterialEmpaque.codigo).all()
+    for m in items:
+        ws.append([m.codigo, m.descripcion, m.unidad.value, m.clasificacion or ""])
+    if not items:
+        ws.append(["ME-001", "Blíster PVC-Aluminio 10x10", "UN", "Estuche"])
+    nota = ws.cell(row=len(items) + 3, column=1, value="* unidad: UN o KG  |  clasificacion: libre (ej: Estuche, Prospecto, Etiqueta, Frasco…)")
     nota.font = Font(italic=True, color="6B7280")
-    ws.merge_cells("A3:D3")
-    return _excel_response(wb, "plantilla_materiales_empaque.xlsx")
+    ws.merge_cells(f"A{len(items)+3}:D{len(items)+3}")
+    return _excel_response(wb, "export_materiales_empaque.xlsx")
 
 
 @router.get("/formas-farmaceuticas/plantilla")
-async def plantilla_ff(user: dict = Depends(require_auth)):
+async def plantilla_ff(db: Session = Depends(get_db), user: dict = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Formas Farmacéuticas"
-    cols = ["nombre", "etapas"]
+    cols = ["nombre", "unidad"]
     _estilo_encabezado(ws, cols)
-    ws.append(["Comprimidos", "Pesada,Granulación,Compresión,Recubrimiento,Envasado"])
-    # Nota aclaratoria
-    nota = ws.cell(row=3, column=1, value="* La columna 'etapas' es opcional. Separar con comas en orden de ejecución.")
+    items = db.query(FormaFarmaceutica).order_by(FormaFarmaceutica.nombre).all()
+    for f in items:
+        ws.append([f.nombre, f.unidad or ""])
+    if not items:
+        ws.append(["Comprimidos", "G"])
+    nota = ws.cell(row=len(items) + 3, column=1, value="* unidad: G (gramos/sólidos) o ML (mililitros/líquidos)")
     nota.font = Font(italic=True, color="6B7280")
-    ws.merge_cells("A3:B3")
-    return _excel_response(wb, "plantilla_formas_farmaceuticas.xlsx")
+    ws.merge_cells(f"A{len(items)+3}:B{len(items)+3}")
+    return _excel_response(wb, "export_formas_farmaceuticas.xlsx")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

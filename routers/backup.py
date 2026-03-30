@@ -13,14 +13,13 @@ Endpoints:
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
-from fastapi.templating import Jinja2Templates
+from shared import templates as _shared_templates
 import os, json, sqlite3, threading, time
 from datetime import datetime
 from pathlib import Path
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
-templates.env.cache = None
+templates = _shared_templates
 
 # ── Rutas de configuración ─────────────────────────────────────────────────────
 
