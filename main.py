@@ -21,6 +21,8 @@ from routers.configuracion import router as configuracion_router
 
 # Crear tablas e inicializar datos al arrancar
 Base.metadata.create_all(bind=engine)
+from migrate_db import run as _migrate_db
+_migrate_db(engine)
 from init_db import init as _init_db
 _init_db()
 
