@@ -11,13 +11,16 @@ from sqlalchemy import text
 def run(engine):
     with engine.connect() as conn:
 
-        # ── etapas_orden: columnas agregadas en v1.1 ──────────────────────────
+        # ── etapas_orden: todas las columnas del modelo actual ────────────────
         stmts = [
-            # columnas nuevas (algunas pueden no existir en DBs viejas)
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS etapa_producto_id   INTEGER REFERENCES etapas_producto(id)",
+            "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS etapa_produccion_id INTEGER REFERENCES etapas_produccion(id)",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS area_id             INTEGER REFERENCES areas_produccion(id)",
+            "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS estado              VARCHAR(20) NOT NULL DEFAULT 'pendiente'",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS iteracion           INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS nombre_display      VARCHAR(200)",
+            "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS fecha_inicio        TIMESTAMP",
+            "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS fecha_fin           TIMESTAMP",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS cantidad_obtenida   FLOAT",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS unidad_obtenida     VARCHAR(10)",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS usuario_inicio_id   INTEGER REFERENCES usuarios(id)",
