@@ -59,4 +59,22 @@ def run(engine):
                 print(f"[migrate_db] warning: {e}")
 
         conn.commit()
+
+        # ── Limpiar etapas_orden huérfanas (sin etapa_producto_id ni etapa_produccion_id) ──
+        # Son filas del esquema viejo que quedaron con todo NULL tras la migración de columnas.
+        # El código de creación lazy las detecta como "ya creadas" y no regenera las etapas.
+        try:
+            r = conn.execute(text("""
+                DELETE FROM etapas_orden
+                WHERE etapa_producto_id IS NULL
+                  AND (etapa_produccion_id IS NULL OR etapa_produccion_id NOT IN (SELECT id FROM etapas_produccion))
+                  AND estado = 'pendiente'
+            """))
+            if r.rowcount:
+                print(f"[migrate_db] {r.rowcount} etapas_orden huérfanas eliminadas.")
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[migrate_db] warning limpieza huérfanas: {e}")
+
         print("[migrate_db] Migraciones de esquema aplicadas correctamente.")

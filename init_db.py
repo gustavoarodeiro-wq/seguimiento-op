@@ -6,9 +6,11 @@ Uso: python init_db.py
 """
 
 from database import Base, engine, SessionLocal
-from database import Usuario, RolUsuario, AlertaConfig, EtapaMaestro, AreaProduccion, EquipoProduccion
+from database import Usuario, RolUsuario, AlertaConfig, EtapaMaestro, AreaProduccion, EquipoProduccion, EtapaProducto
 import bcrypt as _bcrypt
 import sys
+import json
+import os
 
 ETAPAS_MAESTRO_SEED = [
     {"id": 1, "nombre": "Blisteado"},
@@ -142,6 +144,41 @@ def init():
             print("  OK - Etapas maestro, áreas y equipos creados.")
         else:
             print("  INFO - Etapas maestro ya existen, se omiten.")
+
+        # Etapas por producto (etapas_producto + etapa_producto_area)
+        if db.query(EtapaProducto).count() == 0:
+            seed_path = os.path.join(os.path.dirname(__file__), "etapas_producto_seed.json")
+            if os.path.exists(seed_path):
+                with open(seed_path, encoding="utf-8") as f:
+                    seed = json.load(f)
+                for row in seed["etapas_producto"]:
+                    db.add(EtapaProducto(
+                        id=row["id"], producto_id=row["producto_id"],
+                        orden=row["orden"], nombre=row["nombre"],
+                        activo=bool(row["activo"])
+                    ))
+                db.flush()
+                from sqlalchemy import text
+                for row in seed["etapa_producto_area"]:
+                    db.execute(text(
+                        "INSERT INTO etapa_producto_area (etapa_producto_id, area_produccion_id) "
+                        "VALUES (:ep, :ap) ON CONFLICT DO NOTHING"
+                    ), {"ep": row["etapa_producto_id"], "ap": row["area_produccion_id"]})
+                db.commit()
+                # Sincronizar secuencia
+                try:
+                    db.execute(text(
+                        "SELECT setval(pg_get_serial_sequence('etapas_producto', 'id'), "
+                        "COALESCE((SELECT MAX(id) FROM etapas_producto), 1))"
+                    ))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                print(f"  OK - {len(seed['etapas_producto'])} etapas_producto cargadas.")
+            else:
+                print("  WARN - etapas_producto_seed.json no encontrado, se omite.")
+        else:
+            print("  INFO - etapas_producto ya existen, se omiten.")
 
         print("\nBase de datos inicializada correctamente.")
 
