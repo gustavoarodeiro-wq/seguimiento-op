@@ -146,39 +146,41 @@ def init():
             print("  INFO - Etapas maestro ya existen, se omiten.")
 
         # Etapas por producto (etapas_producto + etapa_producto_area)
-        if db.query(EtapaProducto).count() == 0:
-            seed_path = os.path.join(os.path.dirname(__file__), "etapas_producto_seed.json")
-            if os.path.exists(seed_path):
-                with open(seed_path, encoding="utf-8") as f:
-                    seed = json.load(f)
-                for row in seed["etapas_producto"]:
-                    db.add(EtapaProducto(
-                        id=row["id"], producto_id=row["producto_id"],
-                        orden=row["orden"], nombre=row["nombre"],
-                        activo=bool(row["activo"])
-                    ))
-                db.flush()
-                from sqlalchemy import text
-                for row in seed["etapa_producto_area"]:
-                    db.execute(text(
-                        "INSERT INTO etapa_producto_area (etapa_producto_id, area_produccion_id) "
-                        "VALUES (:ep, :ap) ON CONFLICT DO NOTHING"
-                    ), {"ep": row["etapa_producto_id"], "ap": row["area_produccion_id"]})
+        # Siempre hace UPSERT para garantizar consistencia aunque el seed haya corrido parcialmente.
+        from sqlalchemy import text
+        seed_path = os.path.join(os.path.dirname(__file__), "etapas_producto_seed.json")
+        if os.path.exists(seed_path):
+            with open(seed_path, encoding="utf-8") as f:
+                seed = json.load(f)
+            for row in seed["etapas_producto"]:
+                db.execute(text("""
+                    INSERT INTO etapas_producto (id, producto_id, orden, nombre, activo)
+                    VALUES (:id, :producto_id, :orden, :nombre, :activo)
+                    ON CONFLICT (id) DO UPDATE SET
+                        producto_id = EXCLUDED.producto_id,
+                        orden       = EXCLUDED.orden,
+                        nombre      = EXCLUDED.nombre,
+                        activo      = EXCLUDED.activo
+                """), row)
+            db.flush()
+            for row in seed["etapa_producto_area"]:
+                db.execute(text(
+                    "INSERT INTO etapa_producto_area (etapa_producto_id, area_produccion_id) "
+                    "VALUES (:etapa_producto_id, :area_produccion_id) ON CONFLICT DO NOTHING"
+                ), row)
+            db.commit()
+            # Sincronizar secuencia PostgreSQL
+            try:
+                db.execute(text(
+                    "SELECT setval(pg_get_serial_sequence('etapas_producto', 'id'), "
+                    "COALESCE((SELECT MAX(id) FROM etapas_producto), 1))"
+                ))
                 db.commit()
-                # Sincronizar secuencia
-                try:
-                    db.execute(text(
-                        "SELECT setval(pg_get_serial_sequence('etapas_producto', 'id'), "
-                        "COALESCE((SELECT MAX(id) FROM etapas_producto), 1))"
-                    ))
-                    db.commit()
-                except Exception:
-                    db.rollback()
-                print(f"  OK - {len(seed['etapas_producto'])} etapas_producto cargadas.")
-            else:
-                print("  WARN - etapas_producto_seed.json no encontrado, se omite.")
+            except Exception:
+                db.rollback()
+            print(f"  OK - {len(seed['etapas_producto'])} etapas_producto sincronizadas (upsert).")
         else:
-            print("  INFO - etapas_producto ya existen, se omiten.")
+            print("  WARN - etapas_producto_seed.json no encontrado, se omite.")
 
         print("\nBase de datos inicializada correctamente.")
 
