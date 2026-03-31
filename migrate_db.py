@@ -15,6 +15,8 @@ def run(engine):
         stmts = [
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS etapa_producto_id   INTEGER REFERENCES etapas_producto(id)",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS etapa_produccion_id INTEGER REFERENCES etapas_produccion(id)",
+            # En DBs viejas esta columna era NOT NULL; ahora es nullable (legacy)
+            "ALTER TABLE etapas_orden ALTER COLUMN etapa_produccion_id DROP NOT NULL",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS area_id             INTEGER REFERENCES areas_produccion(id)",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS estado              VARCHAR(20) NOT NULL DEFAULT 'pendiente'",
             "ALTER TABLE etapas_orden ADD COLUMN IF NOT EXISTS iteracion           INTEGER NOT NULL DEFAULT 1",
