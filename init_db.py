@@ -161,7 +161,7 @@ def init():
                         orden       = EXCLUDED.orden,
                         nombre      = EXCLUDED.nombre,
                         activo      = EXCLUDED.activo
-                """), row)
+                """), {**row, "activo": bool(row["activo"])})
             db.flush()
             for row in seed["etapa_producto_area"]:
                 db.execute(text(
